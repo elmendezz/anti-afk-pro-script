@@ -1,0 +1,389 @@
+-- MendezSpeedTool | Gemini Dark Edition
+-- Compatible con ejecutores (Delta, Hydrogen, Codex, etc.)
+
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Eliminar ejecuciones previas de la herramienta
+if CoreGui:FindFirstChild("MendezSpeedTool") then
+    CoreGui.MendezSpeedTool:Destroy()
+end
+
+-- Variables de Estado
+local walkSpeed = 16
+local isTpWalk = false
+local isNoVoid = false
+local isNoclip = false
+local defaultFallenY = workspace.FallenPartsDestroyHeight or -500
+
+-- GUI Principal
+local MendezUI = Instance.new("ScreenGui")
+MendezUI.Name = "MendezSpeedTool"
+MendezUI.ResetOnSpawn = false
+MendezUI.Parent = CoreGui
+
+-- Marco Principal
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 320, 0, 380)
+MainFrame.Position = UDim2.new(0.5, -160, 0.5, -190)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = MendezUI
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 14)
+MainCorner.Parent = MainFrame
+
+-- Borde Glow
+local MainGlow = Instance.new("UIStroke")
+MainGlow.Thickness = 2
+MainGlow.Color = Color3.fromRGB(110, 80, 255)
+MainGlow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+MainGlow.Parent = MainFrame
+
+-- Fondo Animado (Gradiente en movimiento)
+local BGGradient = Instance.new("UIGradient")
+BGGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(18, 18, 30)),
+    ColorSequenceKeypoint.new(0.50, Color3.fromRGB(28, 20, 50)),
+    ColorSequenceKeypoint.new(1.00, Color3.fromRGB(12, 12, 22))
+}
+BGGradient.Rotation = 45
+BGGradient.Parent = MainFrame
+
+-- Animación continua del fondo
+task.spawn(function()
+    while MainFrame.Parent do
+        TweenService:Create(BGGradient, TweenInfo.new(4, Enum.EasingStyle.Linear), {Rotation = BGGradient.Rotation + 360}):Play()
+        task.wait(4)
+    end
+end)
+
+-- Barra de Título
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
+TitleBar.BackgroundTransparency = 1
+TitleBar.Parent = MainFrame
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, -50, 1, 0)
+TitleLabel.Position = UDim2.new(0, 15, 0, 0)
+TitleLabel.Text = "⚡ MendezSpeedTool"
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextSize = 16
+TitleLabel.TextColor3 = Color3.fromRGB(220, 225, 255)
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Parent = TitleBar
+
+-- Botón Minimizar (-)
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+MinimizeBtn.Position = UDim2.new(1, -35, 0, 5)
+MinimizeBtn.Text = "—"
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.TextSize = 16
+MinimizeBtn.TextColor3 = Color3.fromRGB(180, 180, 210)
+MinimizeBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+MinimizeBtn.AutoButtonColor = false
+MinimizeBtn.Parent = TitleBar
+
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 8)
+MinCorner.Parent = MinimizeBtn
+
+-- Botón Flotante (Minimizado)
+local FloatingBtn = Instance.new("TextButton")
+FloatingBtn.Name = "FloatingBtn"
+FloatingBtn.Size = UDim2.new(0, 50, 0, 50)
+FloatingBtn.Position = UDim2.new(0, 20, 0.5, -25)
+FloatingBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
+FloatingBtn.Text = "⚡"
+FloatingBtn.Font = Enum.Font.GothamBold
+FloatingBtn.TextSize = 22
+FloatingBtn.TextColor3 = Color3.fromRGB(140, 120, 255)
+FloatingBtn.Visible = false
+FloatingBtn.Parent = MendezUI
+
+local FloatCorner = Instance.new("UICorner")
+FloatCorner.CornerRadius = UDim.new(1, 0)
+FloatCorner.Parent = FloatingBtn
+
+local FloatGlow = Instance.new("UIStroke")
+FloatGlow.Thickness = 2
+FloatGlow.Color = Color3.fromRGB(110, 80, 255)
+FloatGlow.Parent = FloatingBtn
+
+-- Animación de pulso para el botón flotante
+task.spawn(function()
+    while FloatingBtn.Parent do
+        TweenService:Create(FloatGlow, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color = Color3.fromRGB(180, 100, 255)}):Play()
+        task.wait(1.2)
+    end
+end)
+
+-- Sistema de Arrastre (Sin interrupción de cámara)
+local function makeDraggable(guiObject)
+    local dragging = false
+    local dragInput, dragStart, startPos
+
+    guiObject.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = guiObject.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    guiObject.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            guiObject.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+makeDraggable(MainFrame)
+makeDraggable(FloatingBtn)
+
+-- Lógica de Minimizar / Restaurar con animación
+MinimizeBtn.MouseButton1Click:Connect(function()
+    TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0)}):Play()
+    task.wait(0.3)
+    MainFrame.Visible = false
+    FloatingBtn.Visible = true
+    TweenService:Create(FloatingBtn, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 50, 0, 50)}):Play()
+end)
+
+FloatingBtn.MouseButton1Click:Connect(function()
+    FloatingBtn.Visible = false
+    MainFrame.Visible = true
+    MainFrame.Size = UDim2.new(0, 0, 0, 0)
+    TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 320, 0, 380)}):Play()
+end)
+
+-- Contenedor de Opciones
+local Container = Instance.new("Frame")
+Container.Size = UDim2.new(1, -30, 1, -55)
+Container.Position = UDim2.new(0, 15, 0, 45)
+Container.BackgroundTransparency = 1
+Container.Parent = MainFrame
+
+-- Muestra del Valor de Velocidad
+local SpeedValueLabel = Instance.new("TextLabel")
+SpeedValueLabel.Size = UDim2.new(1, 0, 0, 25)
+SpeedValueLabel.Position = UDim2.new(0, 0, 0, 0)
+SpeedValueLabel.Text = "Velocidad: 16"
+SpeedValueLabel.Font = Enum.Font.GothamMedium
+SpeedValueLabel.TextSize = 14
+SpeedValueLabel.TextColor3 = Color3.fromRGB(180, 190, 240)
+SpeedValueLabel.BackgroundTransparency = 1
+SpeedValueLabel.Parent = Container
+
+-- Barra / Slider
+local SliderBackground = Instance.new("Frame")
+SliderBackground.Size = UDim2.new(1, 0, 0, 10)
+SliderBackground.Position = UDim2.new(0, 0, 0, 30)
+SliderBackground.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+SliderBackground.BorderSizePixel = 0
+SliderBackground.Parent = Container
+
+local SliderCorner = Instance.new("UICorner")
+SliderCorner.CornerRadius = UDim.new(1, 0)
+SliderCorner.Parent = SliderBackground
+
+local SliderFill = Instance.new("Frame")
+SliderFill.Size = UDim2.new(16 / 200, 0, 1, 0)
+SliderFill.BackgroundColor3 = Color3.fromRGB(130, 90, 255)
+SliderFill.BorderSizePixel = 0
+SliderFill.Parent = SliderBackground
+
+local FillCorner = Instance.new("UICorner")
+FillCorner.CornerRadius = UDim.new(1, 0)
+FillCorner.Parent = SliderFill
+
+-- Función para actualizar velocidad
+local function updateSpeed(val)
+    walkSpeed = math.clamp(math.floor(val), 1, 200)
+    SpeedValueLabel.Text = "Velocidad: " .. tostring(walkSpeed)
+    SliderFill.Size = UDim2.new(walkSpeed / 200, 0, 1, 0)
+
+    if not isTpWalk and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = walkSpeed
+    end
+end
+
+-- Arrastre del Slider
+local sliderDragging = false
+SliderBackground.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        sliderDragging = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        sliderDragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if sliderDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local pos = math.clamp((input.Position.X - SliderBackground.AbsolutePosition.X) / SliderBackground.AbsoluteSize.X, 0, 1)
+        updateSpeed(pos * 200)
+    end
+end)
+
+-- Botones Ajuste Fino (+ / -)
+local BtnMinus = Instance.new("TextButton")
+BtnMinus.Size = UDim2.new(0.48, 0, 0, 32)
+BtnMinus.Position = UDim2.new(0, 0, 0, 50)
+BtnMinus.Text = "- 5 Velocidad"
+BtnMinus.Font = Enum.Font.GothamBold
+BtnMinus.TextSize = 13
+BtnMinus.TextColor3 = Color3.fromRGB(220, 220, 255)
+BtnMinus.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+BtnMinus.Parent = Container
+
+local MinusCorner = Instance.new("UICorner")
+MinusCorner.CornerRadius = UDim.new(0, 8)
+MinusCorner.Parent = BtnMinus
+
+local BtnPlus = Instance.new("TextButton")
+BtnPlus.Size = UDim2.new(0.48, 0, 0, 32)
+BtnPlus.Position = UDim2.new(0.52, 0, 0, 50)
+BtnPlus.Text = "+ 5 Velocidad"
+BtnPlus.Font = Enum.Font.GothamBold
+BtnPlus.TextSize = 13
+BtnPlus.TextColor3 = Color3.fromRGB(220, 220, 255)
+BtnPlus.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+BtnPlus.Parent = Container
+
+local PlusCorner = Instance.new("UICorner")
+PlusCorner.CornerRadius = UDim.new(0, 8)
+PlusCorner.Parent = BtnPlus
+
+BtnMinus.MouseButton1Click:Connect(function() updateSpeed(walkSpeed - 5) end)
+BtnPlus.MouseButton1Click:Connect(function() updateSpeed(walkSpeed + 5) end)
+
+-- Creador de Botones Toggle estilizados
+local function createToggle(name, yPos, defaultState, callback)
+    local Btn = Instance.new("TextButton")
+    Btn.Size = UDim2.new(1, 0, 0, 36)
+    Btn.Position = UDim2.new(0, 0, 0, yPos)
+    Btn.Font = Enum.Font.GothamMedium
+    Btn.TextSize = 13
+    Btn.AutoButtonColor = false
+    Btn.Parent = Container
+
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 8)
+    Corner.Parent = Btn
+
+    local Stroke = Instance.new("UIStroke")
+    Stroke.Thickness = 1
+    Stroke.Parent = Btn
+
+    local state = defaultState
+
+    local function updateVisuals()
+        if state then
+            Btn.Text = name .. " : [ ACTIVADO ]"
+            Btn.BackgroundColor3 = Color3.fromRGB(60, 40, 110)
+            Btn.TextColor3 = Color3.fromRGB(200, 180, 255)
+            Stroke.Color = Color3.fromRGB(140, 100, 255)
+        else
+            Btn.Text = name .. " : [ DESACTIVADO ]"
+            Btn.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+            Btn.TextColor3 = Color3.fromRGB(150, 150, 180)
+            Stroke.Color = Color3.fromRGB(45, 45, 65)
+        end
+    end
+
+    updateVisuals()
+
+    Btn.MouseButton1Click:Connect(function()
+        state = not state
+        updateVisuals()
+        callback(state)
+    end)
+end
+
+-- Toggles
+createToggle("⚡ TP Walk", 95, false, function(active)
+    isTpWalk = active
+    if not active and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = walkSpeed
+    end
+end)
+
+createToggle("🛡️ No Void", 140, false, function(active)
+    isNoVoid = active
+end)
+
+createToggle("👻 Noclip", 185, false, function(active)
+    isNoclip = active
+end)
+
+-- Bucle Principal (RunService)
+local lastSafeCFrame = nil
+
+RunService.Stepped:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChild("Humanoid")
+
+    -- Noclip
+    if isNoclip then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end
+
+    -- TP Walk Logic
+    if isTpWalk and hum and hrp and hum.MoveDirection.Magnitude > 0 then
+        hrp.CFrame = hrp.CFrame + (hum.MoveDirection * (walkSpeed / 25))
+    elseif not isTpWalk and hum then
+        hum.WalkSpeed = walkSpeed
+    end
+
+    -- No Void Protection
+    if isNoVoid and hrp then
+        if hrp.Position.Y > defaultFallenY + 20 then
+            lastSafeCFrame = hrp.CFrame
+        elseif hrp.Position.Y <= defaultFallenY + 15 then
+            if lastSafeCFrame then
+                hrp.CFrame = lastSafeCFrame + Vector3.new(0, 10, 0)
+                hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            end
+        end
+    end
+end)
