@@ -1,26 +1,10 @@
 -- [[ CHANGELOG ]]
--- [Version: 1] 
--- [+] Creación inicial de MendezFlyTool.
--- [+] Implementación de GUI estilo Gemini Dark con drag & drop (movimiento de ventana).
--- [+] Sistema de vuelo asíncrono basado en cámara con 4 velocidades (Boost $).
--- [+] Sistema Noclip integrado al RenderStepped.
--- [+] Anti-AFK integrado con intercepción de VirtualUser, vibración HapticService y notificaciones.
--- [+] Contadores en vivo asíncronos de FPS, Ping y tiempo de sesión (Días/Horas/Minutos).
--- [+] Sistema de confirmación para cerrar y botón de minimizar.
--- [+] Módulo de auto-reconexión ante desconexiones inesperadas con permanencia de script (queue_on_teleport).
--- [+] Dependencias: Roblox Core Services, Soporte de Ejecutor (queue_on_teleport).
--- [Version: 2]
--- [+] Corrección total de movilidad: Integración del PlayerModule (`GetMoveVector()`) para soporte completo de Joystick móvil, Gamepad (Stick) y Teclado simultáneos.
--- [+] Adición del módulo Updater conectado y botón de actualización directa en la GUI.
--- [+] Optimización de bucles asíncronos, rediseño de distribución de botones y estabilidad general del sistema.
--- [Version: 3]
--- [+] Ajuste de dirección de vuelo para evitar inversiones en el sentido del stick.
--- [+] Implementación de anclaje de posición estricto (Modo Ladrillo) al dejar de mover el joystick, anulando cualquier fuerza física externa o movimiento fantasma en los juegos.
--- [+] Rediseño del modo minimizado para mostrar única y exclusivamente los 3 botones principales (Volar, Boost y Noclip) en formato compacto.
--- [Version: 3.1 Fix]
--- [+] Corrección de la inversión del eje Z para movimiento directo (Stick adelante = mono adelante).
+-- [Version: 3.2 - Animation Update]
+-- [+] Sistema de animaciones dinámicas de vuelo (Idle/Flotar y Movimiento) con soporte para R6 y R15.
+-- [+] Reproducción fluida según la velocidad/dirección del jugador usando el PlayerModule.
+-- [+] Limpieza automática de animaciones al desactivar el vuelo o al morir.
 
-local Version = "3.1"
+local Version = "3.2"
 
 -- [ DEPENDENCIAS Y SERVICIOS ] --
 local Players = game:GetService("Players")
@@ -37,14 +21,14 @@ local GuiService = game:GetService("GuiService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- Obtener controles del jugador para soportar Joystick, Gamepad y Teclado universalmente
+-- Controls
 local Controls = nil
 pcall(function()
     local PlayerModule = require(LocalPlayer.PlayerScripts:WaitForChild("PlayerModule"))
     Controls = PlayerModule:GetControls()
 end)
 
--- Limpiar versiones anteriores para evitar duplicados
+-- Evitar instancias duplicadas
 if getgenv().MendezFlyTool_Loaded then
     if CoreGui:FindFirstChild("MendezFlyTool_UI") then
         CoreGui.MendezFlyTool_UI:Destroy()
@@ -55,7 +39,7 @@ getgenv().MendezFlyTool_Loaded = true
 -- [ VARIABLES DE ESTADO ] --
 local States = {
     Flying = false,
-    FlySpeed = 0, -- 0 = Off, 1 = Lento, 2 = Medio, 3 = Rápido, 4 = Extremo
+    FlySpeed = 0,
     Noclip = false,
     AntiAFK = false,
     StartTime = os.time(),
@@ -69,6 +53,58 @@ local Speeds = {
     [3] = 250,
     [4] = 400
 }
+
+-- [ ID DE ANIMACIONES DE VUELO DE ROBLOX ] --
+local ANIM_IDS = {
+    -- Animaciones predeterminadas de Vuelo/Superhéroe de Roblox
+    FlyIdle = "rbxassetid://507771019",   -- ID de animación flotando en reposo
+    FlyMove = "rbxassetid://507772104"    -- ID de animación volando hacia adelante
+}
+
+local currentFlyTrack = nil
+local currentIdleTrack = nil
+
+-- Función para detener y limpiar las animaciones de vuelo activa
+local function StopFlyAnimations()
+    if currentFlyTrack then
+        currentFlyTrack:Stop(0.2)
+        currentFlyTrack:Destroy()
+        currentFlyTrack = nil
+    end
+    if currentIdleTrack then
+        currentIdleTrack:Stop(0.2)
+        currentIdleTrack:Destroy()
+        currentIdleTrack = nil
+    end
+end
+
+-- Función para inicializar las animaciones
+local function SetupFlyAnimations()
+    StopFlyAnimations()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    
+    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+
+    -- Crear instancias Animation
+    local idleAnim = Instance.new("Animation")
+    idleAnim.AnimationId = ANIM_IDS.FlyIdle
+
+    local moveAnim = Instance.new("Animation")
+    moveAnim.AnimationId = ANIM_IDS.FlyMove
+
+    pcall(function()
+        currentIdleTrack = animator:LoadAnimation(idleAnim)
+        currentIdleTrack.Priority = Enum.AnimationPriority.Action
+        currentIdleTrack.Looped = true
+
+        currentFlyTrack = animator:LoadAnimation(moveAnim)
+        currentFlyTrack.Priority = Enum.AnimationPriority.Action
+        currentFlyTrack.Looped = true
+    end)
+end
 
 -- [ CREACIÓN DE LA INTERFAZ (Gemini Dark) ] --
 local ScreenGui = Instance.new("ScreenGui")
@@ -86,7 +122,7 @@ end
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(19, 19, 20) -- Gemini Dark Background
+MainFrame.BackgroundColor3 = Color3.fromRGB(19, 19, 20)
 MainFrame.Position = UDim2.new(0.5, -150, 0.5, -150)
 MainFrame.Size = UDim2.new(0, 300, 0, 300)
 MainFrame.BorderSizePixel = 0
@@ -121,7 +157,7 @@ TitleLabel.Position = UDim2.new(0, 15, 0, 0)
 TitleLabel.Size = UDim2.new(0.6, 0, 1, 0)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.Text = "MendezFlyTool (v" .. tostring(Version) .. ")"
-TitleLabel.TextColor3 = Color3.fromRGB(138, 180, 248) -- Gemini Blue
+TitleLabel.TextColor3 = Color3.fromRGB(138, 180, 248)
 TitleLabel.TextSize = 15
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -279,7 +315,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Minimizado exclusivo: Muestra solo Volar, Boost y Noclip
+-- Minimizado exclusivo
 MinimizeBtn.MouseButton1Click:Connect(function()
     States.Minimized = not States.Minimized
     if States.Minimized then
@@ -317,6 +353,7 @@ end)
 
 YesBtn.MouseButton1Click:Connect(function()
     getgenv().MendezFlyTool_Loaded = false
+    StopFlyAnimations()
     ScreenGui:Destroy()
 end)
 
@@ -339,6 +376,7 @@ UpdateBtn.MouseButton1Click:Connect(function()
                 Duration = 3,
             })
             task.wait(1)
+            StopFlyAnimations()
             ScreenGui:Destroy()
             getgenv().MendezFlyTool_Loaded = false
             pcall(function()
@@ -359,7 +397,7 @@ UpdateBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- [ LÓGICA DE VUELO UNIVERSAL CON BLOQUEO DE POSICIÓN ESTRICTO ] --
+-- [ LÓGICA DE VUELO UNIVERSAL CON ANIMACIONES Y BLOQUEO DE POSICIÓN ] --
 local BodyVelocity, BodyGyro
 local lockedPosition = nil
 
@@ -367,6 +405,7 @@ local function StopFly()
     if BodyVelocity then BodyVelocity:Destroy() BodyVelocity = nil end
     if BodyGyro then BodyGyro:Destroy() BodyGyro = nil end
     lockedPosition = nil
+    StopFlyAnimations()
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         LocalPlayer.Character.Humanoid.PlatformStand = false
     end
@@ -377,6 +416,7 @@ local function StartFly()
     local HRP = LocalPlayer.Character.HumanoidRootPart
     
     StopFly()
+    SetupFlyAnimations()
     
     BodyGyro = Instance.new("BodyGyro")
     BodyGyro.P = 9e4
@@ -418,7 +458,7 @@ BoostBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Bucle Asíncrono de Vuelo con Anclaje Cinemático (Modo Ladrillo si no se mueve el stick)
+-- Bucle Asíncrono de Vuelo + Control de Animaciones
 task.spawn(function()
     RunService.RenderStepped:Connect(function()
         if States.Flying and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and BodyVelocity and BodyGyro then
@@ -433,18 +473,33 @@ task.spawn(function()
             end
             
             if moveVector.Magnitude > 0 then
-                lockedPosition = nil -- Desbloquear al usar el stick
-                -- (-moveVector.Z) invierte el eje vertical para que Stick Adelante sea siempre Mono Adelante
+                lockedPosition = nil
                 local velocityDir = (camCFrame.RightVector * moveVector.X) + (camCFrame.LookVector * (-moveVector.Z))
                 BodyVelocity.Velocity = velocityDir * speed
                 HRP.AssemblyLinearVelocity = Vector3.zero
+
+                -- Lógica de Animaciones: Reproducir Animación de Movimiento
+                if currentIdleTrack and currentIdleTrack.IsPlaying then
+                    currentIdleTrack:Stop(0.1)
+                end
+                if currentFlyTrack and not currentFlyTrack.IsPlaying then
+                    currentFlyTrack:Play(0.1)
+                end
             else
                 if not lockedPosition then
-                    lockedPosition = HRP.Position -- Fijar posición estricta en el aire
+                    lockedPosition = HRP.Position
                 end
                 BodyVelocity.Velocity = Vector3.new(0, 0, 0)
                 HRP.AssemblyLinearVelocity = Vector3.zero
                 HRP.CFrame = CFrame.new(lockedPosition, lockedPosition + camCFrame.LookVector)
+
+                -- Lógica de Animaciones: Reproducir Animación Estática (Flotar)
+                if currentFlyTrack and currentFlyTrack.IsPlaying then
+                    currentFlyTrack:Stop(0.1)
+                end
+                if currentIdleTrack and not currentIdleTrack.IsPlaying then
+                    currentIdleTrack:Play(0.1)
+                end
             end
         else
             lockedPosition = nil
@@ -502,14 +557,6 @@ LocalPlayer.Idled:Connect(function()
         
         pcall(function()
             if UserInputService:GetGamepadConnected(Enum.UserInputType.Gamepad1) then
-                HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Large, 1)
-                task.wait(0.2)
-                HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Large, 0)
-                task.wait(0.1)
-                HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Large, 1)
-                task.wait(0.2)
-                HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Large, 0)
-                task.wait(0.1)
                 HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Large, 1)
                 task.wait(0.2)
                 HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Large, 0)
