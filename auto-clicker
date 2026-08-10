@@ -1,40 +1,33 @@
--- Version: 3.0.0
--- Dependencies: Roblox Client / Delta Executor (Mobile)
--- Changelog:
--- - Initial version: Setup of base Anti-AFK UI framework.
--- - Version 1.0.0: Custom profile display, vibration, and mobile notifications.
--- - Version 2.0.0: Fixed avatar fetching explicitly for 'angel200xp' via GetUserIdFromNameAsync.
--- - Version 2.0.0: Added explicit ON/OFF toggle button to pause and resume Anti-AFK execution.
--- - Version 2.0.0: Added Auto-Reconnect system storing CFrame coordinates for position restoration.
--- - Version 2.0.0: Added smooth Rainbow background animation effect to the GUI frame.
--- - Version 2.0.0: Isolated touch input dragging to block camera and character movement bleed.
--- - Version 3.0.0: Adapted full framework UI to AutoClicker system with customizable click delay, position toggle (Current vs Custom X,Y), and VirtualInputManager backend.
 
 repeat wait() until game:IsLoaded() and game.Players and game.Players.LocalPlayer and game.Players.LocalPlayer.Character
 
-if getgenv().AutoClickExecuted and thisoneissocoldww then 
-    getgenv().AutoClickExecuted = false
-    getgenv().zamanbaslaticisi = false
-    getgenv().AutoClickEnabled = false
-    game.CoreGui.thisoneissocoldww:Destroy()
+-- Clave única para evitar duplicados
+local GUI_NAME = "RobloxAutoClickerVC_angelTheme"
+
+if game.CoreGui:FindFirstChild(GUI_NAME) then
+    game.CoreGui[GUI_NAME]:Destroy()
 end
 
-getgenv().AutoClickExecuted = true
-getgenv().AutoClickEnabled = true
+getgenv().AutoClickerExecuted = true
+getgenv().ClickingActive = false -- Controla si está haciendo click ahora mismo
+getgenv().EditingPositions = true -- Controla si se pueden mover las bolitas
 
 local Players = game:GetService("Players")
-local StarterGui = game:GetService("StarterGui")
-local HapticService = game:GetService("HapticService")
-local TeleportService = game:GetService("TeleportService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local HttpService = game:GetService("HttpService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
--- Fetch explicit UserId for angel200xp
+-- Variables de configuración
+local clickCps = 10 -- Clicks por segundo por punto
+local clickInterval = 1 / clickCps
+local clickPoints = {} -- Tabla para guardar los frames de las bolitas
+
+-- Obtener ID para el perfil (usando el diseño original)
 local targetUserId = 1
 local successUserId, fetchedId = pcall(function()
     return Players:GetUserIdFromNameAsync("angel200xp")
@@ -45,124 +38,50 @@ else
     targetUserId = LocalPlayer.UserId
 end
 
--- Teleport Coordinate Memory / Position Restore
-local PosFileName = "angel200xp_pos.txt"
+-- --- CREACIÓN DE LA GUI PRINCIPAL (Basado en el diseño original) ---
 
-task.spawn(function()
-    if readfile and isfile and isfile(PosFileName) then
-        local savedData = readfile(PosFileName)
-        if savedData and savedData ~= "" then
-            local p = HttpService:JSONDecode(savedData)
-            if p and p.PlaceId == game.PlaceId then
-                local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-                local hrp = char:WaitForChild("HumanoidRootPart", 5)
-                if hrp then
-                    task.wait(1)
-                    hrp.CFrame = CFrame.new(p.X, p.Y, p.Z)
-                end
-            end
-        end
-        pcall(function() writefile(PosFileName, "") end)
-    end
-end)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = GUI_NAME
+ScreenGui.Parent = CoreGui
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
--- Continuous position tracking
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if getgenv().AutoClickExecuted and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            local pos = LocalPlayer.Character.HumanoidRootPart.Position
-            local data = {
-                PlaceId = game.PlaceId,
-                X = pos.X,
-                Y = pos.Y,
-                Z = pos.Z
-            }
-            pcall(function()
-                if writefile then
-                    writefile(PosFileName, HttpService:JSONEncode(data))
-                end
-            end)
-        end
-    end
-end)
-
--- AutoClick Configuration Variables
-getgenv().ClickDelay = 0.1
-getgenv().UseCustomPos = false
-getgenv().CustomPosX = 0
-getgenv().CustomPosY = 0
-
--- GUI Creation
-local thisoneissocoldww = Instance.new("ScreenGui")
-local madebybloodofbatus = Instance.new("Frame")
-local UICornerw = Instance.new("UICorner")
-local DestroyButton = Instance.new("TextButton")
-local ToggleButton = Instance.new("TextButton")
-local uselesslabelone = Instance.new("TextLabel")
-local timerlabel = Instance.new("TextLabel")
-local uselesslabeltwo = Instance.new("TextLabel")
-local fpslabel = Instance.new("TextLabel")
-local uselesslabelthree = Instance.new("TextLabel")
-local pinglabel = Instance.new("TextLabel")
-local uselessframeone = Instance.new("Frame")
-local UICornerww = Instance.new("UICorner")
-local uselesslabelfour = Instance.new("TextLabel")
-
--- Custom Controls for AutoClick Settings
-local DelayTextBox = Instance.new("TextBox")
-local DelayCorner = Instance.new("UICorner")
-local ModeButton = Instance.new("TextButton")
-local ModeCorner = Instance.new("UICorner")
-local PosTextBoxX = Instance.new("TextBox")
-local PosCornerX = Instance.new("UICorner")
-local PosTextBoxY = Instance.new("TextBox")
-local PosCornerY = Instance.new("UICorner")
-local SetPosButton = Instance.new("TextButton")
-local SetPosCorner = Instance.new("UICorner")
-
--- Animated Background Gradient
+local MainFrame = Instance.new("Frame")
+local UICornerMain = Instance.new("UICorner")
 local UIGradient = Instance.new("UIGradient")
+
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+MainFrame.Position = UDim2.new(0.085, 0, 0.131, 0) -- Posición original
+MainFrame.Size = UDim2.new(0, 250, 0, 180) -- Un poco más alto para los nuevos botones
+MainFrame.Active = true
+MainFrame.Draggable = true -- Arrastrable simple para PC/Móvil básico
+
+UICornerMain.CornerRadius = UDim.new(0, 10)
+UICornerMain.Parent = MainFrame
+
+-- Gradiente Animado Original
 UIGradient.Color = ColorSequence.new{
     ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 45)),
     ColorSequenceKeypoint.new(0.5, Color3.fromRGB(60, 20, 70)),
     ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 40, 60))
 }
-UIGradient.Parent = madebybloodofbatus
+UIGradient.Parent = MainFrame
 
--- Rainbow Gradient Animation Loop
+-- Animación del Gradiente Original
 task.spawn(function()
     local rot = 0
-    while getgenv().AutoClickExecuted do
+    while getgenv().AutoClickerExecuted and MainFrame.Parent do
         rot = (rot + 2) % 360
         UIGradient.Rotation = rot
         task.wait(0.03)
     end
 end)
 
--- Custom User Profile Elements
-local AvatarImage = Instance.new("ImageLabel")
-local AvatarCorner = Instance.new("UICorner")
-local UserInfoLabel = Instance.new("TextLabel")
-
--- Properties:
-thisoneissocoldww.Name = "thisoneissocoldww"
-thisoneissocoldww.Parent = game.CoreGui
-thisoneissocoldww.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-madebybloodofbatus.Name = "madebybloodofbatus"
-madebybloodofbatus.Parent = thisoneissocoldww
-madebybloodofbatus.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-madebybloodofbatus.Position = UDim2.new(0.085, 0, 0.131, 0)
-madebybloodofbatus.Size = UDim2.new(0, 250, 0, 230)
-madebybloodofbatus.Active = true
-
-UICornerw.Name = "UICornerw"
-UICornerw.Parent = madebybloodofbatus
-
--- Destroy (X) Button
+-- Botón Cerrar (X) Original
+local DestroyButton = Instance.new("TextButton")
 DestroyButton.Name = "DestroyButton"
-DestroyButton.Parent = madebybloodofbatus
+DestroyButton.Parent = MainFrame
 DestroyButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 DestroyButton.BackgroundTransparency = 1.000
 DestroyButton.Position = UDim2.new(0.88, 0, 0.02, 0)
@@ -171,402 +90,334 @@ DestroyButton.Font = Enum.Font.SourceSansBold
 DestroyButton.Text = "X"
 DestroyButton.TextColor3 = Color3.fromRGB(255, 70, 70)
 DestroyButton.TextSize = 18.000
-
 DestroyButton.MouseButton1Click:Connect(function()
-    getgenv().AutoClickExecuted = false
-    getgenv().zamanbaslaticisi = false
-    getgenv().AutoClickEnabled = false
-    task.wait(0.1)
-    thisoneissocoldww:Destroy()
+    getgenv().AutoClickerExecuted = false
+    getgenv().ClickingActive = false
+    ScreenGui:Destroy()
 end)
 
--- ON/OFF Power Button
-ToggleButton.Name = "ToggleButton"
-ToggleButton.Parent = madebybloodofbatus
-ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
-ToggleButton.Position = UDim2.new(0.65, 0, 0.03, 0)
-ToggleButton.Size = UDim2.new(0, 50, 0, 20)
-ToggleButton.Font = Enum.Font.SourceSansBold
-ToggleButton.Text = "ON"
-ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleButton.TextSize = 12.000
+-- Título Original Adaptado
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Name = "TitleLabel"
+TitleLabel.Parent = MainFrame
+TitleLabel.BackgroundTransparency = 1.000
+TitleLabel.Position = UDim2.new(0.05, 0, 0.03, 0)
+TitleLabel.Size = UDim2.new(0, 140, 0, 20)
+TitleLabel.Font = Enum.Font.SourceSansBold
+TitleLabel.Text = "Auto Clicker - Móvil"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextSize = 14.000
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-local ToggleCorner = Instance.new("UICorner")
-ToggleCorner.CornerRadius = UDim.new(0, 4)
-ToggleCorner.Parent = ToggleButton
+-- Sección de Perfil Original
+local AvatarImage = Instance.new("ImageLabel")
+local AvatarCorner = Instance.new("UICorner")
+local UserInfoLabel = Instance.new("TextLabel")
 
-ToggleButton.MouseButton1Click:Connect(function()
-    getgenv().AutoClickEnabled = not getgenv().AutoClickEnabled
-    if getgenv().AutoClickEnabled then
-        ToggleButton.Text = "ON"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
-        uselesslabelfour.Text = "AutoClick Activo"
-        uselesslabelfour.TextColor3 = Color3.fromRGB(0, 255, 127)
-    else
-        ToggleButton.Text = "OFF"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-        uselesslabelfour.Text = "AutoClick Pausado"
-        uselesslabelfour.TextColor3 = Color3.fromRGB(255, 100, 100)
-    end
-end)
-
-uselesslabelone.Name = "uselesslabelone"
-uselesslabelone.Parent = madebybloodofbatus
-uselesslabelone.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-uselesslabelone.BackgroundTransparency = 1.000
-uselesslabelone.Position = UDim2.new(0.05, 0, 0.03, 0)
-uselesslabelone.Size = UDim2.new(0, 140, 0, 20)
-uselesslabelone.Font = Enum.Font.SourceSansBold
-uselesslabelone.Text = "AutoClicker - Delta"
-uselesslabelone.TextColor3 = Color3.fromRGB(255, 255, 255)
-uselesslabelone.TextSize = 14.000
-uselesslabelone.TextXAlignment = Enum.TextXAlignment.Left
-
--- Explicit Profile Picture & Name for angel200xp
 AvatarImage.Name = "AvatarImage"
-AvatarImage.Parent = madebybloodofbatus
+AvatarImage.Parent = MainFrame
 AvatarImage.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-AvatarImage.Position = UDim2.new(0.05, 0, 0.13, 0)
+AvatarImage.Position = UDim2.new(0.05, 0, 0.20, 0)
 AvatarImage.Size = UDim2.new(0, 36, 0, 36)
 AvatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(targetUserId) .. "&w=150&h=150"
-
 AvatarCorner.CornerRadius = UDim.new(1, 0)
 AvatarCorner.Parent = AvatarImage
 
 UserInfoLabel.Name = "UserInfoLabel"
-UserInfoLabel.Parent = madebybloodofbatus
-UserInfoLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+UserInfoLabel.Parent = MainFrame
 UserInfoLabel.BackgroundTransparency = 1.000
-UserInfoLabel.Position = UDim2.new(0.22, 0, 0.13, 0)
+UserInfoLabel.Position = UDim2.new(0.22, 0, 0.20, 0)
 UserInfoLabel.Size = UDim2.new(0, 180, 0, 36)
 UserInfoLabel.Font = Enum.Font.SourceSansBold
-UserInfoLabel.Text = "angel200xp\n[elmendezz]"
+UserInfoLabel.Text = LocalPlayer.Name .. "\n[elmendezz theme]"
 UserInfoLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
 UserInfoLabel.TextSize = 13.000
 UserInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
 
--- Controls: Delay Input
-DelayTextBox.Name = "DelayTextBox"
-DelayTextBox.Parent = madebybloodofbatus
-DelayTextBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-DelayTextBox.Position = UDim2.new(0.05, 0, 0.31, 0)
-DelayTextBox.Size = UDim2.new(0, 110, 0, 22)
-DelayTextBox.Font = Enum.Font.SourceSans
-DelayTextBox.Text = "Delay: 0.1s"
-DelayTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-DelayTextBox.TextSize = 12.000
+-- Separador Original
+local Separator = Instance.new("Frame")
+local UICornerSep = Instance.new("UICorner")
+Separator.Name = "Separator"
+Separator.Parent = MainFrame
+Separator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+Separator.Position = UDim2.new(0.02, 0, 0.48, 0)
+Separator.Size = UDim2.new(0, 240, 0, 3)
+UICornerSep.CornerRadius = UDim.new(0, 50)
+UICornerSep.Parent = Separator
 
-DelayCorner.CornerRadius = UDim.new(0, 4)
-DelayCorner.Parent = DelayTextBox
+-- Estado (Texto inferior izquierdo original)
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Name = "StatusLabel"
+StatusLabel.Parent = MainFrame
+StatusLabel.BackgroundTransparency = 1.000
+StatusLabel.Position = UDim2.new(0.05, 0, 0.85, 0)
+StatusLabel.Size = UDim2.new(0, 130, 0, 20)
+StatusLabel.Font = Enum.Font.SourceSans
+StatusLabel.Text = "Configurando puntos..."
+StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+StatusLabel.TextSize = 14.000
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-DelayTextBox.FocusLost:Connect(function()
-    local val = tonumber(DelayTextBox.Text:match("[%d%.]+"))
-    if val and val > 0 then
-        getgenv().ClickDelay = val
-        DelayTextBox.Text = "Delay: " .. tostring(val) .. "s"
-    else
-        DelayTextBox.Text = "Delay: " .. tostring(getgenv().ClickDelay) .. "s"
-    end
-end)
+-- --- NUEVOS CONTROLES DE AUTO CLICKER ---
 
--- Controls: Mode Button (Cursor / Custom Pos)
-ModeButton.Name = "ModeButton"
-ModeButton.Parent = madebybloodofbatus
-ModeButton.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-ModeButton.Position = UDim2.new(0.52, 0, 0.31, 0)
-ModeButton.Size = UDim2.new(0, 113, 0, 22)
-ModeButton.Font = Enum.Font.SourceSansBold
-ModeButton.Text = "Modo: Cursor"
-ModeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ModeButton.TextSize = 11.000
+local function createPoint(position)
+    local pointNumber = #clickPoints + 1
+    if pointNumber > 10 then return end -- Limite de 10 puntos multitouch
 
-ModeCorner.CornerRadius = UDim.new(0, 4)
-ModeCorner.Parent = ModeButton
+    local PointFrame = Instance.new("Frame")
+    local UICornerPoint = Instance.new("UICorner")
+    local PointLabel = Instance.new("TextLabel")
 
-ModeButton.MouseButton1Click:Connect(function()
-    getgenv().UseCustomPos = not getgenv().UseCustomPos
-    if getgenv().UseCustomPos then
-        ModeButton.Text = "Modo: Coord (X,Y)"
-        ModeButton.BackgroundColor3 = Color3.fromRGB(120, 70, 160)
-    else
-        ModeButton.Text = "Modo: Cursor"
-        ModeButton.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-    end
-end)
+    PointFrame.Name = "ClickPoint_" .. pointNumber
+    PointFrame.Parent = ScreenGui -- Fuera del frame principal para que se mueva por toda la pantalla
+    PointFrame.Size = UDim2.new(0, 30, 0, 30)
+    PointFrame.Position = position or UDim2.new(0.5, -15, 0.5, -15)
+    PointFrame.BackgroundColor3 = Color3.fromRGB(0, 255, 127) -- Color neón del diseño original
+    PointFrame.BorderSizePixel = 0
+    PointFrame.Active = true
+    PointFrame.ZIndex = 10 -- Por encima de casi todo
 
--- Controls: Custom X Input
-PosTextBoxX.Name = "PosTextBoxX"
-PosTextBoxX.Parent = madebybloodofbatus
-PosTextBoxX.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-PosTextBoxX.Position = UDim2.new(0.05, 0, 0.43, 0)
-PosTextBoxX.Size = UDim2.new(0, 70, 0, 22)
-PosTextBoxX.Font = Enum.Font.SourceSans
-PosTextBoxX.Text = "X: 0"
-PosTextBoxX.TextColor3 = Color3.fromRGB(255, 255, 255)
-PosTextBoxX.TextSize = 12.000
+    -- Hacerlo circular
+    UICornerPoint.CornerRadius = UDim.new(1, 0)
+    UICornerPoint.Parent = PointFrame
 
-PosCornerX.CornerRadius = UDim.new(0, 4)
-PosCornerX.Parent = PosTextBoxX
+    PointLabel.Parent = PointFrame
+    PointLabel.Size = UDim2.new(1, 0, 1, 0)
+    PointLabel.BackgroundTransparency = 1
+    PointLabel.Font = Enum.Font.SourceSansBold
+    PointLabel.Text = tostring(pointNumber)
+    PointLabel.TextColor3 = Color3.fromRGB(30, 30, 30)
+    PointLabel.TextSize = 20
 
-PosTextBoxX.FocusLost:Connect(function()
-    local val = tonumber(PosTextBoxX.Text:match("%d+"))
-    if val then
-        getgenv().CustomPosX = val
-        PosTextBoxX.Text = "X: " .. tostring(val)
-    else
-        PosTextBoxX.Text = "X: " .. tostring(getgenv().CustomPosX)
-    end
-end)
+    -- Lógica para arrastrar la bolita (Soporte Móvil)
+    local dragging = false
+    local dragInput, dragStart, startPos
 
--- Controls: Custom Y Input
-PosTextBoxY.Name = "PosTextBoxY"
-PosTextBoxY.Parent = madebybloodofbatus
-PosTextBoxY.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-PosTextBoxY.Position = UDim2.new(0.35, 0, 0.43, 0)
-PosTextBoxY.Size = UDim2.new(0, 70, 0, 22)
-PosTextBoxY.Font = Enum.Font.SourceSans
-PosTextBoxY.Text = "Y: 0"
-PosTextBoxY.TextColor3 = Color3.fromRGB(255, 255, 255)
-PosTextBoxY.TextSize = 12.000
+    PointFrame.InputBegan:Connect(function(input)
+        if not getgenv().EditingPositions then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = PointFrame.Position
 
-PosCornerY.CornerRadius = UDim.new(0, 4)
-PosCornerY.Parent = PosTextBoxY
-
-PosTextBoxY.FocusLost:Connect(function()
-    local val = tonumber(PosTextBoxY.Text:match("%d+"))
-    if val then
-        getgenv().CustomPosY = val
-        PosTextBoxY.Text = "Y: " .. tostring(val)
-    else
-        PosTextBoxY.Text = "Y: " .. tostring(getgenv().CustomPosY)
-    end
-end)
-
--- Controls: Set Current Pos Button
-SetPosButton.Name = "SetPosButton"
-SetPosButton.Parent = madebybloodofbatus
-SetPosButton.BackgroundColor3 = Color3.fromRGB(0, 120, 180)
-SetPosButton.Position = UDim2.new(0.66, 0, 0.43, 0)
-SetPosButton.Size = UDim2.new(0, 78, 0, 22)
-SetPosButton.Font = Enum.Font.SourceSansBold
-SetPosButton.Text = "Grap Touch"
-SetPosButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-SetPosButton.TextSize = 11.000
-
-SetPosCorner.CornerRadius = UDim.new(0, 4)
-SetPosCorner.Parent = SetPosButton
-
-SetPosButton.MouseButton1Click:Connect(function()
-    local mouse = LocalPlayer:GetMouse()
-    getgenv().CustomPosX = mouse.X
-    getgenv().CustomPosY = mouse.Y
-    PosTextBoxX.Text = "X: " .. tostring(mouse.X)
-    PosTextBoxY.Text = "Y: " .. tostring(mouse.Y)
-end)
-
-uselesslabeltwo.Name = "uselesslabeltwo"
-uselesslabeltwo.Parent = madebybloodofbatus
-uselesslabeltwo.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-uselesslabeltwo.BackgroundTransparency = 1.000
-uselesslabeltwo.Position = UDim2.new(0.05, 0, 0.68, 0)
-uselesslabeltwo.Size = UDim2.new(0, 29, 0, 20)
-uselesslabeltwo.Font = Enum.Font.SourceSans
-uselesslabeltwo.Text = "Ping: "
-uselesslabeltwo.TextColor3 = Color3.fromRGB(255, 255, 255)
-uselesslabeltwo.TextSize = 14.000
-
-fpslabel.Name = "fpslabel"
-fpslabel.Parent = madebybloodofbatus
-fpslabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-fpslabel.BackgroundTransparency = 1.000
-fpslabel.Position = UDim2.new(0.70, 0, 0.68, 0)
-fpslabel.Size = UDim2.new(0, 55, 0, 20)
-fpslabel.Font = Enum.Font.SourceSans
-fpslabel.Text = "--"
-fpslabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-fpslabel.TextSize = 14.000
-
-uselesslabelthree.Name = "uselesslabelthree"
-uselesslabelthree.Parent = madebybloodofbatus
-uselesslabelthree.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-uselesslabelthree.BackgroundTransparency = 1.000
-uselesslabelthree.Position = UDim2.new(0.50, 0, 0.68, 0)
-uselesslabelthree.Size = UDim2.new(0, 26, 0, 20)
-uselesslabelthree.Font = Enum.Font.SourceSans
-uselesslabelthree.Text = "Fps: "
-uselesslabelthree.TextColor3 = Color3.fromRGB(255, 255, 255)
-uselesslabelthree.TextSize = 14.000
-
-pinglabel.Name = "pinglabel"
-pinglabel.Parent = madebybloodofbatus
-pinglabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-pinglabel.BackgroundTransparency = 1.000
-pinglabel.Position = UDim2.new(0.20, 0, 0.68, 0)
-pinglabel.Size = UDim2.new(0, 55, 0, 20)
-pinglabel.Font = Enum.Font.SourceSans
-pinglabel.Text = "--"
-pinglabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-pinglabel.TextSize = 14.000
-pinglabel.TextWrapped = true
-
-uselessframeone.Name = "uselessframeone"
-uselessframeone.Parent = madebybloodofbatus
-uselessframeone.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-uselessframeone.Position = UDim2.new(0.02, 0, 0.60, 0)
-uselessframeone.Size = UDim2.new(0, 240, 0, 3)
-
-UICornerww.CornerRadius = UDim.new(0, 50)
-UICornerww.Name = "UICornerww"
-UICornerww.Parent = uselessframeone
-
-uselesslabelfour.Name = "uselesslabelfour"
-uselesslabelfour.Parent = madebybloodofbatus
-uselesslabelfour.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-uselesslabelfour.BackgroundTransparency = 1.000
-uselesslabelfour.Position = UDim2.new(0.05, 0, 0.82, 0)
-uselesslabelfour.Size = UDim2.new(0, 130, 0, 20)
-uselesslabelfour.Font = Enum.Font.SourceSans
-uselesslabelfour.Text = "AutoClick Activo"
-uselesslabelfour.TextColor3 = Color3.fromRGB(0, 255, 127)
-uselesslabelfour.TextSize = 14.000
-uselesslabelfour.TextXAlignment = Enum.TextXAlignment.Left
-
-timerlabel.Name = "timerlabel"
-timerlabel.Parent = madebybloodofbatus
-timerlabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-timerlabel.BackgroundTransparency = 1.000
-timerlabel.Position = UDim2.new(0.65, 0, 0.82, 0)
-timerlabel.Size = UDim2.new(0, 60, 0, 20)
-timerlabel.Font = Enum.Font.SourceSans
-timerlabel.Text = "0:0:0"
-timerlabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-timerlabel.TextSize = 14.000
-
--- Isolated Mobile Drag Logic (Prevents camera/character movement bleed)
-local Drag = madebybloodofbatus
-local dragging = false
-local dragInput
-local dragStart
-local startPos
-
-Drag.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = Drag.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-Drag.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        local SmoothDrag = {
-            Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        }
-        TweenService:Create(Drag, TweenInfo.new(0.04, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), SmoothDrag):Play()
-    end
-end)
-
--- AutoClick Engine Loop
-task.spawn(function()
-    while getgenv().AutoClickExecuted do
-        if getgenv().AutoClickEnabled then
-            pcall(function()
-                local posX, posY
-                if getgenv().UseCustomPos then
-                    posX = getgenv().CustomPosX
-                    posY = getgenv().CustomPosY
-                else
-                    local mouse = LocalPlayer:GetMouse()
-                    posX = mouse.X
-                    posY = mouse.Y
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
                 end
-                
-                VirtualInputManager:SendMouseButtonEvent(posX, posY, 0, true, game, 0)
-                task.wait(0.01)
-                VirtualInputManager:SendMouseButtonEvent(posX, posY, 0, false, game, 0)
             end)
         end
-        task.wait(getgenv().ClickDelay or 0.1)
-    end
-end)
-
--- Auto Reconnect on Kick/Disconnect
-local GuiService = game:GetService("GuiService")
-GuiService.ErrorMessageChanged:Connect(function()
-    task.wait(0.5)
-    pcall(function()
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
     end)
-end)
 
--- Stats Logic (FPS)
-local sec = nil
-local FPS = {}
+    PointFrame.InputChanged:Connect(function(input)
+        if not getgenv().EditingPositions then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
 
-local function fre()
-    local fr = tick()
-    for index = #FPS,1,-1 do
-        FPS[index + 1] = (FPS[index] >= fr - 1) and FPS[index] or nil
-    end
-    FPS[1] = fr
-    local fps = (tick() - sec >= 1 and #FPS) or (#FPS / (tick() - sec))
-    fps = math.floor(fps)
-    fpslabel.Text = tostring(fps)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging and getgenv().EditingPositions then
+            local delta = input.Position - dragStart
+            PointFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    table.insert(clickPoints, PointFrame)
 end
 
-sec = tick()
-RunService.RenderStepped:Connect(fre)
+-- Botón Añadir Punto (+)
+local AddPointButton = Instance.new("TextButton")
+local UICornerAdd = Instance.new("UICorner")
+AddPointButton.Name = "AddPointButton"
+AddPointButton.Parent = MainFrame
+AddPointButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80) -- Tono oscuro del diseño
+AddPointButton.Position = UDim2.new(0.05, 0, 0.55, 0)
+AddPointButton.Size = UDim2.new(0, 110, 0, 25)
+AddPointButton.Font = Enum.Font.SourceSansBold
+AddPointButton.Text = "+ Añadir Punto"
+AddPointButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+AddPointButton.TextSize = 14.000
+UICornerAdd.CornerRadius = UDim.new(0, 5)
+UICornerAdd.Parent = AddPointButton
 
--- Stats Logic (Ping)
-task.spawn(function()
-    repeat
-        task.wait(1)
-        local success, result = pcall(function()
-            return math.floor(game:GetService("Stats"):FindFirstChild("PerformanceStats").Ping:GetValue())
-        end)
-        if success and pinglabel then
-            pinglabel.Text = tostring(result)
-        end
-    until not getgenv().AutoClickExecuted or pinglabel == nil
+AddPointButton.MouseButton1Click:Connect(function()
+    if not getgenv().ClickingActive then
+        createPoint()
+    end
 end)
 
--- Timer Logic
-local saniye = 0
-local dakika = 0
-local saat = 0
+-- Botón Limpiar Puntos
+local ClearPointsButton = Instance.new("TextButton")
+local UICornerClear = Instance.new("UICorner")
+ClearPointsButton.Name = "ClearPointsButton"
+ClearPointsButton.Parent = MainFrame
+ClearPointsButton.BackgroundColor3 = Color3.fromRGB(80, 60, 60)
+ClearPointsButton.Position = UDim2.new(0.52, 0, 0.55, 0)
+ClearPointsButton.Size = UDim2.new(0, 110, 0, 25)
+ClearPointsButton.Font = Enum.Font.SourceSansBold
+ClearPointsButton.Text = "Limpiar"
+ClearPointsButton.TextColor3 = Color3.fromRGB(255, 200, 200)
+ClearPointsButton.TextSize = 14.000
+UICornerClear.CornerRadius = UDim.new(0, 5)
+UICornerClear.Parent = ClearPointsButton
 
-getgenv().zamanbaslaticisi = true
+ClearPointsButton.MouseButton1Click:Connect(function()
+    if not getgenv().ClickingActive then
+        for _, p in pairs(clickPoints) do
+            p:Destroy()
+        end
+        clickPoints = {}
+    end
+end)
 
-task.spawn(function()
-    while getgenv().zamanbaslaticisi do
+
+-- Botón LISTO / INICIAR (Estilo ON/OFF original)
+local ReadyButton = Instance.new("TextButton")
+local UICornerReady = Instance.new("UICorner")
+ReadyButton.Name = "ReadyButton"
+ReadyButton.Parent = MainFrame
+ReadyButton.BackgroundColor3 = Color3.fromRGB(0, 180, 100) -- Color ON original
+ReadyButton.Position = UDim2.new(0.05, 0, 0.73, 0)
+ReadyButton.Size = UDim2.new(0, 230, 0, 30)
+ReadyButton.Font = Enum.Font.SourceSansBold
+ReadyButton.Text = "LISTO (Iniciar)"
+ReadyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ReadyButton.TextSize = 16.000
+UICornerReady.CornerRadius = UDim.new(0, 5)
+UICornerReady.Parent = ReadyButton
+
+-- Botón Auto Click Centro (IGNORAR RESTO)
+local CenterClickButton = Instance.new("TextButton")
+local UICornerCenter = Instance.new("UICorner")
+local UIGradientCenter = Instance.new("UIGradient")
+
+CenterClickButton.Name = "CenterClickButton"
+CenterClickButton.Parent = MainFrame
+CenterClickButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+CenterClickButton.Position = UDim2.new(0.65, 0, 0.20, 0) -- Al lado del perfil
+CenterClickButton.Size = UDim2.new(0, 80, 0, 36)
+CenterClickButton.Font = Enum.Font.SourceSansBold
+CenterClickButton.Text = "AUTO\nCENTRO"
+CenterClickButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CenterClickButton.TextSize = 12.000
+CenterClickButton.TextWrapped = true
+
+UICornerCenter.CornerRadius = UDim.new(0, 5)
+UICornerCenter.Parent = CenterClickButton
+
+-- Gradiente para el botón central (rojo/morado furioso)
+UIGradientCenter.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 0, 200))
+}
+UIGradientCenter.Parent = CenterClickButton
+
+local centerClickingOnly = false
+
+-- Lógica del Botón Listo
+ReadyButton.MouseButton1Click:Connect(function()
+    if #clickPoints == 0 and not centerClickingOnly then
+        StatusLabel.Text = "¡Añade puntos primero!"
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
         task.wait(1)
-        saniye = saniye + 1
+        StatusLabel.Text = "Configurando puntos..."
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+        return
+    end
 
-        if saniye >= 60 then
-            saniye = 0
-            dakika = dakika + 1
+    if not getgenv().ClickingActive then
+        -- INICIAR
+        getgenv().ClickingActive = true
+        getgenv().EditingPositions = false
+        ReadyButton.Text = "PARAR"
+        ReadyButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40) -- Color OFF original
+        StatusLabel.Text = "AUTO CLICK ACTIVO"
+        StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 127)
+        AddPointButton.Visible = false
+        ClearPointsButton.Visible = false
+        CenterClickButton.Visible = false
+
+        -- Ocultar visualmente las bolitas (transparencia) pero mantener posición
+        for _, p in pairs(clickPoints) do
+            p.BackgroundTransparency = 0.7
+            p.TextLabel.TextTransparency = 0.7
         end
+    else
+        -- PARAR
+        getgenv().ClickingActive = false
+        getgenv().EditingPositions = true
+        ReadyButton.Text = "LISTO (Iniciar)"
+        ReadyButton.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+        StatusLabel.Text = "Configurando puntos..."
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+        AddPointButton.Visible = true
+        ClearPointsButton.Visible = true
+        CenterClickButton.Visible = true
+        centerClickingOnly = false
 
-        if dakika >= 60 then
-            dakika = 0
-            saat = saat + 1
-        end
-
-        if timerlabel then
-            timerlabel.Text = saat..":"..dakika..":"..saniye
+        -- Mostrar bolitas
+        for _, p in pairs(clickPoints) do
+            p.BackgroundTransparency = 0
+            p.TextLabel.TextTransparency = 0
         end
     end
 end)
+
+-- Lógica del Botón Centro
+CenterClickButton.MouseButton1Click:Connect(function()
+    if getgenv().ClickingActive then return end
+
+    -- Borrar otros puntos
+    for _, p in pairs(clickPoints) do
+        p:Destroy()
+    end
+    clickPoints = {}
+
+    -- Crear punto en el centro de la pantalla
+    local viewportSize = workspace.CurrentCamera.ViewportSize
+    local centerPos = UDim2.new(0, viewportSize.X / 2, 0, viewportSize.Y / 2)
+    createPoint(centerPos)
+
+    -- Fijar que solo es este punto y no se mueve
+    getgenv().EditingPositions = false
+    centerClickingOnly = true
+
+    -- Forzar inicio
+    ReadyButton.MouseButton1Click:Fire()
+    StatusLabel.Text = "MODO CENTRO ACTIVO"
+end)
+
+
+-- --- BUCLE DE AUTO CLICK (Soporte Multitouch via VIM) ---
+
+task.spawn(function()
+    while getgenv().AutoClickerExecuted do
+        if getgenv().ClickingActive and #clickPoints > 0 then
+            -- Recorrer todos los puntos definidos (Multitouch)
+            for _, pointFrame in pairs(clickPoints) do
+                if not getgenv().ClickingActive then break end -- Seguridad
+
+                local x = pointFrame.AbsolutePosition.X + (pointFrame.AbsoluteSize.X / 2)
+                local y = pointFrame.AbsolutePosition.Y + (pointFrame.AbsoluteSize.Y / 2) + 36 -- Offset barra Roblox
+
+                -- Usar VirtualInputManager para simular toques/clicks en coordenadas exactas
+                VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1) -- Click Presionado
+                task.wait(0.01) -- Pequeña espera para que el juego registre el "tap"
+                VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1) -- Click Soltado
+            end
+            -- Espera entre ráfagas de clicks basadas en CPS
+            task.wait(clickInterval)
+        else
+            task.wait(0.1) -- Espera pasiva si no está activo
+        end
+    end
+end)
+
+-- Crear un punto inicial por defecto
+createPoint(UDim2.new(0.5, 50, 0.5, -15))
+
+StarterGui:SetCore("SendNotification", {
+    Title = "angel200xp Theme",
+    Text = "Auto Clicker Multitouch Cargado",
+    Duration = 5
+})
