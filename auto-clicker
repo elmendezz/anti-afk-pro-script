@@ -1,3 +1,20 @@
+-- Version: 8.0.0
+-- Dependencies: Roblox Client / Delta Executor (Mobile)
+-- Changelog:
+-- - Initial version: Setup of base Anti-AFK UI framework.
+-- - Version 1.0.0: Custom profile display, vibration, and mobile notifications.
+-- - Version 2.0.0: Fixed avatar fetching explicitly for 'angel200xp' via GetUserIdFromNameAsync.
+-- - Version 2.0.0: Added explicit ON/OFF toggle button to pause and resume Anti-AFK execution.
+-- - Version 2.0.0: Added Auto-Reconnect system storing CFrame coordinates for position restoration.
+-- - Version 2.0.0: Added smooth Rainbow background animation effect to the GUI frame.
+-- - Version 2.0.0: Isolated touch input dragging to block camera and character movement bleed.
+-- - Version 3.0.0: Adapted full framework UI to AutoClicker system with customizable click delay, position toggle (Current vs Custom X,Y), and VirtualInputManager backend.
+-- - Version 4.0.0: Fixed mobile touch drag isolation to prevent camera movement bleed. Implemented game-world touch click bypass via VirtualInputManager SendTouchEvent.
+-- - Version 5.0.0: Added triple vibration pattern on startup (brr-brr-brr). Implemented fully isolated draggable touch points without locking camera or player movement. Added complete speed/interval configuration controls.
+-- - Version 6.0.0: Removed native VirtualInputManager Mouse events to prevent Roblox switching input modes to PC/Keyboard. Implemented Camera 3D Raycasting, native ClickDetector firing, and TouchTap injection to keep mobile touch controls completely active.
+-- - Version 7.0.0: Replaced while loops with RunService (Heartbeat and RenderStepped) for maximum frame-sync performance. Removed forced TouchTap injection to prevent interference with real user input. Added task.defer for non-blocking game touches. Added InputTransparent logic for UI elements.
+-- - Version 8.0.0: Implemented "Mezcla Pro" input fallback (VirtualInputManager + Raycast + Tool:Activate) to restore UI tapping without blocking touch. Added IgnoreGuiInset and ResetOnSpawn to ScreenGui for total stability. Perfected InputTransparent toggling for ClickPoints.
+
 repeat wait() until game:IsLoaded() and game.Players and game.Players.LocalPlayer and game.Players.LocalPlayer.Character
 
 local GUI_NAME = "thisoneissocoldww"
@@ -15,6 +32,7 @@ local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local HapticService = game:GetService("HapticService")
 local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
@@ -51,6 +69,8 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = GUI_NAME
 ScreenGui.Parent = CoreGui
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.ResetOnSpawn = false
 
 local MainFrame = Instance.new("Frame")
 local UICornerMain = Instance.new("UICorner")
@@ -218,6 +238,7 @@ local function createPoint(position)
     PointFrame.Position = position or UDim2.new(0.5, -17, 0.4, -17)
     PointFrame.BackgroundColor3 = Color3.fromRGB(0, 255, 127)
     PointFrame.Active = true
+    PointFrame.InputTransparent = false -- Se bloquea para poder moverlo al inicio
     PointFrame.ZIndex = 100
 
     UICornerPoint.CornerRadius = UDim.new(1, 0)
@@ -353,7 +374,7 @@ ReadyButton.MouseButton1Click:Connect(function()
             p.BackgroundTransparency = 0.5
             p.TextLabel.TextTransparency = 0.5
             p.Active = true
-            pcall(function() p.InputTransparent = true end) -- Deja pasar los clicks seguramente
+            pcall(function() p.InputTransparent = true end) -- Ahora sí, deja pasar los clicks por completo
         end
     else
         getgenv().ClickingActive = false
@@ -370,33 +391,39 @@ ReadyButton.MouseButton1Click:Connect(function()
             p.BackgroundTransparency = 0
             p.TextLabel.TextTransparency = 0
             p.Active = true
-            pcall(function() p.InputTransparent = false end)
+            pcall(function() p.InputTransparent = false end) -- Vuelve a ser interactuable para moverlo
         end
     end
 end)
 
--- Native In-Game Touch Simulation Engine (Bypasses PC Input Mode)
+-- Native In-Game Touch Simulation Engine (Bypasses PC Input Mode) - Mezcla Pro
 local function performNativeGameTouch(x, y)
     pcall(function()
-        -- 1. Raycast from camera to world coordinates to interact with objects in-game
+        -- 1. Raycast para los ClickDetectors (Interacción 3D)
         local unitRay = Camera:ScreenPointToRay(x, y)
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
         if LocalPlayer.Character then
-            raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, ScreenGui}
+            params.FilterDescendantsInstances = {LocalPlayer.Character, ScreenGui}
+        else
+            params.FilterDescendantsInstances = {ScreenGui}
         end
         
-        local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, raycastParams)
+        local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, params)
         if result and result.Instance then
-            local hitPart = result.Instance
-            -- Check for ClickDetectors on hit object
-            local detector = hitPart:FindFirstChildOfClass("ClickDetector") or hitPart.Parent:FindFirstChildOfClass("ClickDetector")
+            local detector = result.Instance:FindFirstChildOfClass("ClickDetector") 
+                or result.Instance.Parent:FindFirstChildOfClass("ClickDetector")
+            
             if detector and fireclickdetector then
                 fireclickdetector(detector)
             end
         end
 
-        -- 2. Trigger Active Tool in Character if equipped
+        -- 2. Virtual click (Principal) para atrapar botones de la UI
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+
+        -- 3. Activar la herramienta que tengas en la mano
         local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
         if tool then
             tool:Activate()
