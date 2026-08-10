@@ -13,8 +13,10 @@
 -- [+] Corrección total de movilidad: Integración del PlayerModule (`GetMoveVector()`) para soporte completo de Joystick móvil, Gamepad (Stick) y Teclado simultáneos.
 -- [+] Adición del módulo Updater conectado a GitHub (`https://raw.githubusercontent.com/elmendezz/anti-afk-pro-script/refs/heads/main/flytool`) con botón de actualización directa en la GUI.
 -- [+] Optimización de bucles asíncronos, rediseño de distribución de botones y estabilidad general del sistema.
+-- [Version: 3]
+-- [+] Corrección de inversión en el eje vertical del stick (movimiento hacia adelante y atrás corregido mediante la inversión del vector Z).
 
-local Version = 2
+local Version = 3
 
 -- [ DEPENDENCIAS Y SERVICIOS ] --
 local Players = game:GetService("Players")
@@ -393,7 +395,7 @@ BoostBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Bucle Asíncrono de Vuelo con soporte absoluto de Sticks y Teclados
+-- Bucle Asíncrono de Vuelo con soporte absoluto de Sticks y Teclados (Eje Z corregido)
 task.spawn(function()
     RunService.RenderStepped:Connect(function()
         if States.Flying and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and BodyVelocity and BodyGyro then
@@ -407,7 +409,8 @@ task.spawn(function()
             end
             
             if moveVector.Magnitude > 0 then
-                local velocityDir = (camCFrame.RightVector * moveVector.X) + (camCFrame.LookVector * moveVector.Z)
+                -- Corregido: Se invierte el eje Z (-moveVector.Z) para alinear correctamente adelante y atrás
+                local velocityDir = (camCFrame.RightVector * moveVector.X) - (camCFrame.LookVector * moveVector.Z)
                 BodyVelocity.Velocity = velocityDir * speed
             else
                 BodyVelocity.Velocity = Vector3.new(0, 0, 0)
