@@ -1,11 +1,13 @@
 -- ==========================================
--- MendezTeleportTool v1.0
+-- MendezTeleportTool v1.1 (Delta Fix)
 -- Diseñado con estilo Gemini Dark
 -- ==========================================
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 -- Archivo de configuración único por experiencia
@@ -17,44 +19,6 @@ local SavedCFrame = nil
 local LiveUpdate = true
 local LoopTP = false
 local LoopConnection = nil
-local SavedPosList = {}
-
--- ==========================================
--- SISTEMA DE ARCHIVOS (SAVE / LOAD)
--- ==========================================
-local function SaveData()
-	if writefile then
-		local dataToSave = {
-			SavedPositions = {}
-		}
-		if SavedCFrame then
-			local pos = SavedCFrame.Position
-			dataToSave.MainSaved = {pos.X, pos.Y, pos.Z}
-		end
-		local success, err = pcall(function()
-			writefile(ConfigFileName, game:GetService("HttpService"):JSONEncode(dataToSave))
-		end)
-		if success then
-			print("[MendezTP] Configuración guardada automáticamente para PlaceId: " .. PlaceId)
-		end
-	end
-end
-
-local function LoadData()
-	if readfile and isfile and isfile(ConfigFileName) then
-		local success, result = pcall(function()
-			return game:GetService("HttpService"):JSONDecode(readfile(ConfigFileName))
-		end)
-		if success and result then
-			if result.MainSaved then
-				SavedCFrame = CFrame.new(result.MainSaved[1], result.MainSaved[2], result.MainSaved[3])
-			end
-			print("[MendezTP] Configuración cargada con éxito.")
-		end
-	end
-end
-
-LoadData()
 
 -- ==========================================
 -- CREACIÓN DE LA GUI (Gemini Dark Theme)
@@ -63,7 +27,7 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MendezTeleportTool_Gui"
 ScreenGui.ResetOnSpawn = false
 
--- Protección contra pérdida de GUI al reaparecer o ejecuciones múltiples
+-- Asignación segura del contenedor raíz
 if gethui then
 	ScreenGui.Parent = gethui()
 elseif syn and syn.protect_gui then
@@ -76,9 +40,9 @@ end
 -- Marco Principal
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 360, 0, 480)
-MainFrame.Position = UDim2.new(0.5, -180, 0.5, -240)
-MainFrame.BackgroundColor3 = Color3.fromRGB(18, 19, 22) -- Gemini Background Dark
+MainFrame.Size = UDim2.new(0, 320, 0, 420)
+MainFrame.Position = UDim2.new(0.5, -160, 0.5, -210)
+MainFrame.BackgroundColor3 = Color3.fromRGB(18, 19, 22)
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
 MainFrame.Parent = ScreenGui
@@ -109,13 +73,13 @@ Title.Size = UDim2.new(1, -50, 1, 0)
 Title.Position = UDim2.new(0, 15, 0, 0)
 Title.BackgroundTransparency = 1
 Title.Text = "MendezTeleportTool"
-Title.TextColor3 = Color3.fromRGB(168, 199, 250) -- Gemini Accent Blue
-Title.TextSize = 16
+Title.TextColor3 = Color3.fromRGB(168, 199, 250)
+Title.TextSize = 15
 Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Header
 
--- Botón Cierre / Minimizar
+-- Botón Minimizar
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0, 30, 0, 30)
 ToggleBtn.Position = UDim2.new(1, -38, 0.5, -15)
@@ -130,33 +94,38 @@ local ToggleBtnCorner = Instance.new("UICorner")
 ToggleBtnCorner.CornerRadius = UDim.new(0, 8)
 ToggleBtnCorner.Parent = ToggleBtn
 
--- Contenedor de Contenido
-local Content = Instance.new("Frame")
+-- Contenedor con Desplazamiento (ScrollingFrame)
+local Content = Instance.new("ScrollingFrame")
 Content.Name = "Content"
-Content.Size = UDim2.new(1, -30, 1, -60)
-Content.Position = UDim2.new(0, 15, 0, 50)
+Content.Size = UDim2.new(1, -20, 1, -55)
+Content.Position = UDim2.new(0, 10, 0, 50)
 Content.BackgroundTransparency = 1
+Content.BorderSizePixel = 0
+Content.ScrollBarThickness = 4
+Content.ScrollBarImageColor3 = Color3.fromRGB(60, 64, 72)
+Content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Content.CanvasSize = UDim2.new(0, 0, 0, 0)
 Content.Parent = MainFrame
 
 local UIList = Instance.new("UIListLayout")
 UIList.SortOrder = Enum.SortOrder.LayoutOrder
-UIList.Padding = UDim.new(0, 10)
+UIList.Padding = UDim.new(0, 8)
 UIList.Parent = Content
 
--- Función auxiliar para crear botones estilizados con animaciones
+-- Creador de Botones
 local function CreateButton(text, primary)
 	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, 0, 0, 38)
+	btn.Size = UDim2.new(1, -8, 0, 38)
 	btn.BackgroundColor3 = primary and Color3.fromRGB(168, 199, 250) or Color3.fromRGB(30, 31, 37)
 	btn.TextColor3 = primary and Color3.fromRGB(18, 19, 22) or Color3.fromRGB(220, 220, 220)
 	btn.Text = text
 	btn.Font = Enum.Font.GothamMedium
-	btn.TextSize = 13
+	btn.TextSize = 12
 	btn.AutoButtonColor = false
 	btn.Parent = Content
 
 	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
+	corner.CornerRadius = UDim.new(0, 8)
 	corner.Parent = btn
 
 	local stroke = Instance.new("UIStroke")
@@ -164,22 +133,10 @@ local function CreateButton(text, primary)
 	stroke.Thickness = 1
 	stroke.Parent = btn
 
-	-- Animaciones al pasar el mouse/tocar
-	btn.MouseEnter:Connect(function()
-		TweenService:Create(btn, TweenInfo.new(0.2), {
-			BackgroundColor3 = primary and Color3.fromRGB(190, 215, 255) or Color3.fromRGB(42, 44, 52)
-		}):Play()
-	end)
-	btn.MouseLeave:Connect(function()
-		TweenService:Create(btn, TweenInfo.new(0.2), {
-			BackgroundColor3 = primary and Color3.fromRGB(168, 199, 250) or Color3.fromRGB(30, 31, 37)
-		}):Play()
-	end)
-
 	return btn
 end
 
--- Función auxiliar para cajas de texto de coordenadas
+-- Creador de Cajas de Texto Coordenadas
 local function CreateCoordBox(placeholder)
 	local box = Instance.new("TextBox")
 	box.Size = UDim2.new(0.31, 0, 0, 36)
@@ -188,7 +145,7 @@ local function CreateCoordBox(placeholder)
 	box.PlaceholderText = placeholder
 	box.PlaceholderColor3 = Color3.fromRGB(100, 100, 110)
 	box.Font = Enum.Font.Gotham
-	box.TextSize = 12
+	box.TextSize = 11
 	box.Text = ""
 	box.ClearTextOnFocus = false
 
@@ -204,9 +161,9 @@ local function CreateCoordBox(placeholder)
 	return box
 end
 
--- Sección Coordenadas Vivo
+-- Interfaz interna
 local CoordContainer = Instance.new("Frame")
-CoordContainer.Size = UDim2.new(1, 0, 0, 36)
+CoordContainer.Size = UDim2.new(1, -8, 0, 36)
 CoordContainer.BackgroundTransparency = 1
 CoordContainer.Parent = Content
 
@@ -222,35 +179,58 @@ InputY.Parent = CoordContainer
 local InputZ = CreateCoordBox("Z")
 InputZ.Parent = CoordContainer
 
--- Botones
 local ToggleLiveBtn = CreateButton("En Vivo: ACTIVADO", false)
 local SavePosBtn = CreateButton("Guardar Posición Actual", false)
 local TeleportSavedBtn = CreateButton("Teleport a Posición Guardada", true)
-local TeleportCustomBtn = CreateButton("Teleport a Coordenadas Escritas", false)
+local TeleportCustomBtn = CreateButton("Teleport a Escrito", false)
 local LoopTPBtn = CreateButton("Loop Teleport: DESACTIVADO", false)
-local ManualSaveConfigBtn = CreateButton("Guardar Configuración Manual", false)
+local ManualSaveConfigBtn = CreateButton("Guardar Config Manual", false)
 
 -- ==========================================
--- LÓGICA DE TELEPORT Y COORDENADAS
+-- SISTEMA DE ARCHIVOS (SAVE / LOAD SEGURO)
 -- ==========================================
-local function GetCharacter()
-	return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local function SaveData()
+	pcall(function()
+		if writefile then
+			local dataToSave = {}
+			if SavedCFrame then
+				local pos = SavedCFrame.Position
+				dataToSave.MainSaved = {pos.X, pos.Y, pos.Z}
+			end
+			writefile(ConfigFileName, HttpService:JSONEncode(dataToSave))
+		end
+	end)
 end
 
+local function LoadData()
+	pcall(function()
+		if readfile and isfile and isfile(ConfigFileName) then
+			local result = HttpService:JSONEncode(readfile(ConfigFileName))
+			if result and result.MainSaved then
+				SavedCFrame = CFrame.new(result.MainSaved[1], result.MainSaved[2], result.MainSaved[3])
+			end
+		end
+	end)
+end
+
+task.spawn(LoadData)
+
+-- ==========================================
+-- FUNCIONALIDADES DE TELEPORT
+-- ==========================================
 local function GetRoot()
-	local char = GetCharacter()
-	return char:WaitForChild("HumanoidRootPart", 2)
+	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+	return char:FindFirstChild("HumanoidRootPart")
 end
 
--- Actualización en Vivo de coordenadas
 RunService.RenderStepped:Connect(function()
 	if LiveUpdate then
 		local root = GetRoot()
 		if root then
 			local pos = root.Position
-			InputX.Text = string.format("%.2f", pos.X)
-			InputY.Text = string.format("%.2f", pos.Y)
-			InputZ.Text = string.format("%.2f", pos.Z)
+			InputX.Text = string.format("%.1f", pos.X)
+			InputY.Text = string.format("%.1f", pos.Y)
+			InputZ.Text = string.format("%.1f", pos.Z)
 		end
 	end
 end)
@@ -266,7 +246,6 @@ ToggleLiveBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Guardar / Cargar Posiciones
 SavePosBtn.MouseButton1Click:Connect(function()
 	local root = GetRoot()
 	if root then
@@ -294,7 +273,6 @@ TeleportCustomBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Loop Teleport
 LoopTPBtn.MouseButton1Click:Connect(function()
 	LoopTP = not LoopTP
 	if LoopTP then
@@ -318,18 +296,18 @@ end)
 
 ManualSaveConfigBtn.MouseButton1Click:Connect(function()
 	SaveData()
-	ManualSaveConfigBtn.Text = "¡Archivos de Config Guardados!"
+	ManualSaveConfigBtn.Text = "¡Configuración Guardada!"
 	task.wait(1)
-	ManualSaveConfigBtn.Text = "Guardar Configuración Manual"
+	ManualSaveConfigBtn.Text = "Guardar Config Manual"
 end)
 
 -- ==========================================
--- ANIMACIONES Y DRAGGING LIBRE DE CÁMARA
+-- ANIMACIÓN Y DRAGGING LIBRE
 -- ==========================================
 local isMinimized = false
 ToggleBtn.MouseButton1Click:Connect(function()
 	isMinimized = not isMinimized
-	local targetSize = isMinimized and UDim2.new(0, 360, 0, 45) or UDim2.new(0, 360, 0, 480)
+	local targetSize = isMinimized and UDim2.new(0, 320, 0, 45) or UDim2.new(0, 320, 0, 420)
 	
 	TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 		Size = targetSize
@@ -338,39 +316,28 @@ ToggleBtn.MouseButton1Click:Connect(function()
 	ToggleBtn.Text = isMinimized and "+" or "-"
 end)
 
--- Dragging totalmente limpio para no interferir con la cámara de Roblox
-local dragging, dragInput, dragStart, startPos
-
-local function update(input)
-	local delta = input.Position - dragStart
-	MainFrame.Position = UDim2.new(
-		startPos.X.Scale, startPos.X.Offset + delta.X,
-		startPos.Y.Scale, startPos.Y.Offset + delta.Y
-	)
-end
+local dragging, dragStart, startPos
 
 Header.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		dragging = true
 		dragStart = input.Position
 		startPos = MainFrame.Position
-
-		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then
-				dragging = false
-			end
-		end)
 	end
 end)
 
-Header.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-		dragInput = input
+Header.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = false
 	end
 end)
 
 game:GetService("UserInputService").InputChanged:Connect(function(input)
-	if input == dragInput and dragging then
-		update(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		MainFrame.Position = UDim2.new(
+			startPos.X.Scale, startPos.X.Offset + delta.X,
+			startPos.Y.Scale, startPos.Y.Offset + delta.Y
+		)
 	end
 end)
