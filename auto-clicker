@@ -1,473 +1,83 @@
--- Version: 9.0.0
--- Dependencies: Roblox Client / Delta Executor (Mobile)
--- Changelog:
--- - Initial version: Setup of base Anti-AFK UI framework.
--- - Version 1.0.0: Custom profile display, vibration, and mobile notifications.
--- - Version 2.0.0: Fixed avatar fetching explicitly for 'angel200xp' via GetUserIdFromNameAsync.
--- - Version 2.0.0: Added explicit ON/OFF toggle button to pause and resume Anti-AFK execution.
--- - Version 2.0.0: Added Auto-Reconnect system storing CFrame coordinates for position restoration.
--- - Version 2.0.0: Added smooth Rainbow background animation effect to the GUI frame.
--- - Version 2.0.0: Isolated touch input dragging to block camera and character movement bleed.
--- - Version 3.0.0: Adapted full framework UI to AutoClicker system with customizable click delay, position toggle (Current vs Custom X,Y), and VirtualInputManager backend.
--- - Version 4.0.0: Fixed mobile touch drag isolation to prevent camera movement bleed. Implemented game-world touch click bypass via VirtualInputManager SendTouchEvent.
--- - Version 5.0.0: Added triple vibration pattern on startup (brr-brr-brr). Implemented fully isolated draggable touch points without locking camera or player movement. Added complete speed/interval configuration controls.
--- - Version 6.0.0: Removed native VirtualInputManager Mouse events to prevent Roblox switching input modes to PC/Keyboard. Implemented Camera 3D Raycasting, native ClickDetector firing, and TouchTap injection to keep mobile touch controls completely active.
--- - Version 7.0.0: Replaced while loops with RunService (Heartbeat and RenderStepped) for maximum frame-sync performance. Removed forced TouchTap injection to prevent interference with real user input. Added task.defer for non-blocking game touches. Added InputTransparent logic for UI elements.
--- - Version 8.0.0: Implemented "Mezcla Pro" input fallback (VirtualInputManager + Raycast + Tool:Activate) to restore UI tapping without blocking touch. Added IgnoreGuiInset and ResetOnSpawn to ScreenGui for total stability. Perfected InputTransparent toggling for ClickPoints.
--- - Version 9.0.0: Fixed script-breaking error by wrapping InputTransparent in pcall during point creation. Added native Active = false/true logic to correctly allow touch input to pass through the UI when running.
-
-repeat wait() until game:IsLoaded() and game.Players and game.Players.LocalPlayer and game.Players.LocalPlayer.Character
-
-local GUI_NAME = "thisoneissocoldww"
-
-if game.CoreGui:FindFirstChild(GUI_NAME) then
-    game.CoreGui[GUI_NAME]:Destroy()
-end
-
-getgenv().AutoClickerExecuted = true
-getgenv().ClickingActive = false
-getgenv().EditingPositions = true
-
+--// SERVICES
 local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
-local HapticService = game:GetService("HapticService")
-local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
 
+--// PLAYER
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
-local clickPoints = {}
-local clickInterval = 0.1
-local availableIntervals = {0.01, 0.05, 0.1, 0.5, 1.0}
-local currentIntervalIdx = 3
 
--- Triple vibration on startup (brr-brr-brr)
-task.spawn(function()
-    pcall(function()
-        for i = 1, 3 do
-            HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Small, 1)
-            task.wait(0.08)
-            HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Small, 0)
-            task.wait(0.08)
-        end
-    end)
-end)
+--// CONFIG
+local AUTOCLICK = false
+local CLICK_DELAY = 0.1 -- velocidad (baja = más rápido)
 
--- Fetch explicit UserId for angel200xp
-local targetUserId = 1
-local successUserId, fetchedId = pcall(function()
-    return Players:GetUserIdFromNameAsync("angel200xp")
-end)
-if successUserId and fetchedId then
-    targetUserId = fetchedId
-else
-    targetUserId = LocalPlayer.UserId
-end
-
--- ScreenGui Setup
+--// GUI
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = GUI_NAME
-ScreenGui.Parent = CoreGui
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = game.CoreGui
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.ResetOnSpawn = false
 
-local MainFrame = Instance.new("Frame")
-local UICornerMain = Instance.new("UICorner")
-local UIGradient = Instance.new("UIGradient")
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(0, 120, 0, 50)
+ToggleButton.Position = UDim2.new(0, 20, 0, 100)
+ToggleButton.Text = "AUTOCLICK: OFF"
+ToggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+ToggleButton.TextColor3 = Color3.new(1,1,1)
+ToggleButton.Parent = ScreenGui
 
-MainFrame.Name = "madebybloodofbatus"
-MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-MainFrame.Position = UDim2.new(0.085, 0, 0.131, 0)
-MainFrame.Size = UDim2.new(0, 260, 0, 230)
-MainFrame.Active = true
+--// FUNCIÓN DE CLICK
+local function performClick(x, y)
+    -- 1. Raycast para ClickDetector
+    local unitRay = Camera:ScreenPointToRay(x, y)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {LocalPlayer.Character, ScreenGui}
 
-UICornerMain.CornerRadius = UDim.new(0, 10)
-UICornerMain.Parent = MainFrame
+    local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, params)
 
-UIGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 45)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(60, 20, 70)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 40, 60))
-}
-UIGradient.Parent = MainFrame
+    if result and result.Instance then
+        local detector = result.Instance:FindFirstChildOfClass("ClickDetector")
+            or result.Instance.Parent:FindFirstChildOfClass("ClickDetector")
 
--- Gradient Animation via RenderStepped (Non-blocking)
-local renderConnection
-renderConnection = RunService.RenderStepped:Connect(function()
-    if not getgenv().AutoClickerExecuted then
-        if renderConnection then renderConnection:Disconnect() end
-        return 
-    end
-    if not MainFrame.Parent then return end
-
-    UIGradient.Rotation = (UIGradient.Rotation + 2) % 360
-end)
-
--- Main Frame Dragging
-local mainDragging = false
-local mainDragStart, mainStartPos, activeTouch
-
-MainFrame.InputBegan:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) and not mainDragging then
-        mainDragging = true
-        activeTouch = input
-        mainDragStart = input.Position
-        mainStartPos = MainFrame.Position
-    end
-end)
-
-MainFrame.InputChanged:Connect(function(input)
-    if mainDragging and (input == activeTouch or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
-        local delta = input.Position - mainDragStart
-        MainFrame.Position = UDim2.new(mainStartPos.X.Scale, mainStartPos.X.Offset + delta.X, mainStartPos.Y.Scale, mainStartPos.Y.Offset + delta.Y)
-    end
-end)
-
-MainFrame.InputEnded:Connect(function(input)
-    if input == activeTouch or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        mainDragging = false
-        activeTouch = nil
-    end
-end)
-
--- Header UI Elements
-local DestroyButton = Instance.new("TextButton")
-DestroyButton.Name = "DestroyButton"
-DestroyButton.Parent = MainFrame
-DestroyButton.BackgroundTransparency = 1.000
-DestroyButton.Position = UDim2.new(0.88, 0, 0.02, 0)
-DestroyButton.Size = UDim2.new(0, 25, 0, 20)
-DestroyButton.Font = Enum.Font.SourceSansBold
-DestroyButton.Text = "X"
-DestroyButton.TextColor3 = Color3.fromRGB(255, 70, 70)
-DestroyButton.TextSize = 18.000
-
-DestroyButton.MouseButton1Click:Connect(function()
-    getgenv().AutoClickerExecuted = false
-    getgenv().ClickingActive = false
-    ScreenGui:Destroy()
-end)
-
-local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Parent = MainFrame
-TitleLabel.BackgroundTransparency = 1.000
-TitleLabel.Position = UDim2.new(0.05, 0, 0.03, 0)
-TitleLabel.Size = UDim2.new(0, 140, 0, 20)
-TitleLabel.Font = Enum.Font.SourceSansBold
-TitleLabel.Text = "AutoClicker Pro - Delta"
-TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TitleLabel.TextSize = 14.000
-TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local AvatarImage = Instance.new("ImageLabel")
-local AvatarCorner = Instance.new("UICorner")
-local UserInfoLabel = Instance.new("TextLabel")
-
-AvatarImage.Parent = MainFrame
-AvatarImage.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-AvatarImage.Position = UDim2.new(0.05, 0, 0.15, 0)
-AvatarImage.Size = UDim2.new(0, 34, 0, 34)
-AvatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(targetUserId) .. "&w=150&h=150"
-AvatarCorner.CornerRadius = UDim.new(1, 0)
-AvatarCorner.Parent = AvatarImage
-
-UserInfoLabel.Parent = MainFrame
-UserInfoLabel.BackgroundTransparency = 1.000
-UserInfoLabel.Position = UDim2.new(0.20, 0, 0.15, 0)
-UserInfoLabel.Size = UDim2.new(0, 180, 0, 34)
-UserInfoLabel.Font = Enum.Font.SourceSansBold
-UserInfoLabel.Text = "angel200xp\n[elmendezz]"
-UserInfoLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
-UserInfoLabel.TextSize = 12.000
-UserInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local Separator = Instance.new("Frame")
-local UICornerSep = Instance.new("UICorner")
-Separator.Parent = MainFrame
-Separator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-Separator.Position = UDim2.new(0.02, 0, 0.33, 0)
-Separator.Size = UDim2.new(0, 250, 0, 2)
-UICornerSep.CornerRadius = UDim.new(0, 50)
-UICornerSep.Parent = Separator
-
--- Speed/Interval Selector UI
-local SpeedLabel = Instance.new("TextLabel")
-SpeedLabel.Parent = MainFrame
-SpeedLabel.BackgroundTransparency = 1
-SpeedLabel.Position = UDim2.new(0.05, 0, 0.36, 0)
-SpeedLabel.Size = UDim2.new(0, 110, 0, 22)
-SpeedLabel.Font = Enum.Font.SourceSansBold
-SpeedLabel.Text = "Intervalo: 0.1s"
-SpeedLabel.TextColor3 = Color3.fromRGB(220, 220, 255)
-SpeedLabel.TextSize = 13
-SpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local SpeedButton = Instance.new("TextButton")
-local UICornerSpeed = Instance.new("UICorner")
-SpeedButton.Parent = MainFrame
-SpeedButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-SpeedButton.Position = UDim2.new(0.52, 0, 0.36, 0)
-SpeedButton.Size = UDim2.new(0, 110, 0, 22)
-SpeedButton.Font = Enum.Font.SourceSansBold
-SpeedButton.Text = "Cambiar Tiempo"
-SpeedButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-SpeedButton.TextSize = 11
-UICornerSpeed.CornerRadius = UDim.new(0, 4)
-UICornerSpeed.Parent = SpeedButton
-
-SpeedButton.MouseButton1Click:Connect(function()
-    currentIntervalIdx = (currentIntervalIdx % #availableIntervals) + 1
-    clickInterval = availableIntervals[currentIntervalIdx]
-    SpeedLabel.Text = "Intervalo: " .. tostring(clickInterval) .. "s"
-end)
-
--- Point Creation Mechanism
-local function createPoint(position)
-    local pointNumber = #clickPoints + 1
-    if pointNumber > 10 then return end
-
-    local PointFrame = Instance.new("Frame")
-    local UICornerPoint = Instance.new("UICorner")
-    local PointLabel = Instance.new("TextLabel")
-
-    PointFrame.Name = "ClickPoint_" .. pointNumber
-    PointFrame.Parent = ScreenGui
-    PointFrame.Size = UDim2.new(0, 34, 0, 34)
-    PointFrame.Position = position or UDim2.new(0.5, -17, 0.4, -17)
-    PointFrame.BackgroundColor3 = Color3.fromRGB(0, 255, 127)
-    
-    -- El secreto para que no se crashee: Active bloquea el input para poder arrastrarlo ahora mismo.
-    -- pcall previene que el InputTransparent inventado crashee la función si no está soportado.
-    PointFrame.Active = true
-    pcall(function() PointFrame.InputTransparent = false end)
-    
-    PointFrame.ZIndex = 100
-
-    UICornerPoint.CornerRadius = UDim.new(1, 0)
-    UICornerPoint.Parent = PointFrame
-
-    PointLabel.Parent = PointFrame
-    PointLabel.Size = UDim2.new(1, 0, 1, 0)
-    PointLabel.BackgroundTransparency = 1
-    PointLabel.Font = Enum.Font.SourceSansBold
-    PointLabel.Text = tostring(pointNumber)
-    PointLabel.TextColor3 = Color3.fromRGB(20, 20, 20)
-    PointLabel.TextSize = 16
-
-    local pointDragging = false
-    local pointDragStart, pointStartPos, pTouch
-
-    PointFrame.InputBegan:Connect(function(input)
-        if not getgenv().EditingPositions then return end
-        if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) and not pointDragging then
-            pointDragging = true
-            pTouch = input
-            pointDragStart = input.Position
-            pointStartPos = PointFrame.Position
+        if detector and fireclickdetector then
+            fireclickdetector(detector)
         end
-    end)
+    end
 
-    PointFrame.InputChanged:Connect(function(input)
-        if pointDragging and getgenv().EditingPositions and (input == pTouch or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
-            local delta = input.Position - pointDragStart
-            PointFrame.Position = UDim2.new(pointStartPos.X.Scale, pointStartPos.X.Offset + delta.X, pointStartPos.Y.Scale, pointStartPos.Y.Offset + delta.Y)
-        end
-    end)
+    -- 2. Click virtual (PRINCIPAL)
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
 
-    PointFrame.InputEnded:Connect(function(input)
-        if input == pTouch or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            pointDragging = false
-            pTouch = nil
-        end
-    end)
-
-    table.insert(clickPoints, PointFrame)
+    -- 3. Tool (si tienes herramienta equipada)
+    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+    if tool then
+        tool:Activate()
+    end
 end
 
--- Control Buttons
-local AddPointButton = Instance.new("TextButton")
-local UICornerAdd = Instance.new("UICorner")
-AddPointButton.Parent = MainFrame
-AddPointButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-AddPointButton.Position = UDim2.new(0.05, 0, 0.49, 0)
-AddPointButton.Size = UDim2.new(0, 110, 0, 24)
-AddPointButton.Font = Enum.Font.SourceSansBold
-AddPointButton.Text = "+ Añadir Punto"
-AddPointButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-AddPointButton.TextSize = 12
-UICornerAdd.CornerRadius = UDim.new(0, 4)
-UICornerAdd.Parent = AddPointButton
-
-AddPointButton.MouseButton1Click:Connect(function()
-    if not getgenv().ClickingActive then
-        createPoint()
+--// LOOP SIN BLOQUEO
+task.spawn(function()
+    while true do
+        if AUTOCLICK then
+            local pos = UserInputService:GetMouseLocation()
+            performClick(pos.X, pos.Y)
+        end
+        task.wait(CLICK_DELAY)
     end
 end)
 
-local ClearPointsButton = Instance.new("TextButton")
-local UICornerClear = Instance.new("UICorner")
-ClearPointsButton.Parent = MainFrame
-ClearPointsButton.BackgroundColor3 = Color3.fromRGB(70, 40, 40)
-ClearPointsButton.Position = UDim2.new(0.52, 0, 0.49, 0)
-ClearPointsButton.Size = UDim2.new(0, 110, 0, 24)
-ClearPointsButton.Font = Enum.Font.SourceSansBold
-ClearPointsButton.Text = "Limpiar"
-ClearPointsButton.TextColor3 = Color3.fromRGB(255, 180, 180)
-ClearPointsButton.TextSize = 12
-UICornerClear.CornerRadius = UDim.new(0, 4)
-UICornerClear.Parent = ClearPointsButton
-
-ClearPointsButton.MouseButton1Click:Connect(function()
-    if not getgenv().ClickingActive then
-        for _, p in pairs(clickPoints) do
-            p:Destroy()
-        end
-        clickPoints = {}
-    end
+--// BOTÓN TOGGLE
+ToggleButton.MouseButton1Click:Connect(function()
+    AUTOCLICK = not AUTOCLICK
+    ToggleButton.Text = AUTOCLICK and "AUTOCLICK: ON" or "AUTOCLICK: OFF"
 end)
 
--- Status Display
-local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Parent = MainFrame
-StatusLabel.BackgroundTransparency = 1.000
-StatusLabel.Position = UDim2.new(0.05, 0, 0.86, 0)
-StatusLabel.Size = UDim2.new(0, 230, 0, 20)
-StatusLabel.Font = Enum.Font.SourceSans
-StatusLabel.Text = "Configurando puntos..."
-StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
-StatusLabel.TextSize = 12
-
--- Toggle Button (INICIAR / PARAR)
-local ReadyButton = Instance.new("TextButton")
-local UICornerReady = Instance.new("UICorner")
-ReadyButton.Parent = MainFrame
-ReadyButton.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
-ReadyButton.Position = UDim2.new(0.05, 0, 0.63, 0)
-ReadyButton.Size = UDim2.new(0, 230, 0, 30)
-ReadyButton.Font = Enum.Font.SourceSansBold
-ReadyButton.Text = "INICIAR AUTOCLICK"
-ReadyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ReadyButton.TextSize = 14
-UICornerReady.CornerRadius = UDim.new(0, 4)
-UICornerReady.Parent = ReadyButton
-
-ReadyButton.MouseButton1Click:Connect(function()
-    if #clickPoints == 0 then
-        StatusLabel.Text = "¡Añade al menos 1 punto!"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-        task.wait(1)
-        StatusLabel.Text = "Configurando puntos..."
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
-        return
-    end
-
-    if not getgenv().ClickingActive then
-        getgenv().ClickingActive = true
-        getgenv().EditingPositions = false
-        ReadyButton.Text = "DETENER"
-        ReadyButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-        StatusLabel.Text = "AutoClicker Ejecutándose..."
-        StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 127)
-        AddPointButton.Visible = false
-        ClearPointsButton.Visible = false
-        SpeedButton.Visible = false
-
-        for _, p in pairs(clickPoints) do
-            p.BackgroundTransparency = 0.5
-            p.TextLabel.TextTransparency = 0.5
-            
-            -- Active = false es la forma real en Roblox de dejar pasar el Touch
-            p.Active = false
-            pcall(function() p.InputTransparent = true end)
-        end
-    else
-        getgenv().ClickingActive = false
-        getgenv().EditingPositions = true
-        ReadyButton.Text = "INICIAR AUTOCLICK"
-        ReadyButton.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
-        StatusLabel.Text = "Configurando puntos..."
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
-        AddPointButton.Visible = true
-        ClearPointsButton.Visible = true
-        SpeedButton.Visible = true
-
-        for _, p in pairs(clickPoints) do
-            p.BackgroundTransparency = 0
-            p.TextLabel.TextTransparency = 0
-            
-            -- Volvemos a bloquear el input para poder arrastrarlo
-            p.Active = true
-            pcall(function() p.InputTransparent = false end)
+--// SOPORTE MÓVIL (tap)
+UserInputService.TouchTap:Connect(function(touchPositions)
+    if AUTOCLICK then
+        for _, pos in ipairs(touchPositions) do
+            performClick(pos.X, pos.Y)
         end
     end
 end)
-
--- Native In-Game Touch Simulation Engine (Bypasses PC Input Mode) - Mezcla Pro
-local function performNativeGameTouch(x, y)
-    pcall(function()
-        -- 1. Raycast para los ClickDetectors (Interacción 3D)
-        local unitRay = Camera:ScreenPointToRay(x, y)
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        if LocalPlayer.Character then
-            params.FilterDescendantsInstances = {LocalPlayer.Character, ScreenGui}
-        else
-            params.FilterDescendantsInstances = {ScreenGui}
-        end
-        
-        local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, params)
-        if result and result.Instance then
-            local detector = result.Instance:FindFirstChildOfClass("ClickDetector") 
-                or result.Instance.Parent:FindFirstChildOfClass("ClickDetector")
-            
-            if detector and fireclickdetector then
-                fireclickdetector(detector)
-            end
-        end
-
-        -- 2. Virtual click (Principal) para atrapar botones de la UI
-        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-
-        -- 3. Activar la herramienta que tengas en la mano
-        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-        if tool then
-            tool:Activate()
-        end
-    end)
-end
-
--- Execution Loop using RunService (Non-blocking)
-local accumulator = 0
-local heartbeatConnection
-heartbeatConnection = RunService.Heartbeat:Connect(function(deltaTime)
-    if not getgenv().AutoClickerExecuted then 
-        if heartbeatConnection then heartbeatConnection:Disconnect() end
-        return 
-    end
-    if not getgenv().ClickingActive then return end
-    if #clickPoints == 0 then return end
-
-    accumulator = accumulator + deltaTime
-
-    if accumulator >= clickInterval then
-        accumulator = 0
-
-        for _, pointFrame in ipairs(clickPoints) do
-            if not getgenv().ClickingActive then break end
-
-            local x = pointFrame.AbsolutePosition.X + (pointFrame.AbsoluteSize.X / 2)
-            local y = pointFrame.AbsolutePosition.Y + (pointFrame.AbsoluteSize.Y / 2)
-
-            task.defer(function()
-                performNativeGameTouch(x, y)
-            end)
-        end
-    end
-end)
-
--- Spawn initial point
-createPoint(UDim2.new(0.5, -17, 0.4, -17))
