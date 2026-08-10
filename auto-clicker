@@ -14,6 +14,7 @@ local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local HapticService = game:GetService("HapticService")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
@@ -72,13 +73,16 @@ UIGradient.Color = ColorSequence.new{
 }
 UIGradient.Parent = MainFrame
 
-task.spawn(function()
-    local rot = 0
-    while getgenv().AutoClickerExecuted and MainFrame.Parent do
-        rot = (rot + 2) % 360
-        UIGradient.Rotation = rot
-        task.wait(0.03)
+-- Gradient Animation via RenderStepped (Non-blocking)
+local renderConnection
+renderConnection = RunService.RenderStepped:Connect(function()
+    if not getgenv().AutoClickerExecuted then
+        if renderConnection then renderConnection:Disconnect() end
+        return 
     end
+    if not MainFrame.Parent then return end
+
+    UIGradient.Rotation = (UIGradient.Rotation + 2) % 360
 end)
 
 -- Main Frame Dragging
@@ -348,7 +352,8 @@ ReadyButton.MouseButton1Click:Connect(function()
         for _, p in pairs(clickPoints) do
             p.BackgroundTransparency = 0.5
             p.TextLabel.TextTransparency = 0.5
-            p.Active = false
+            p.Active = true
+            pcall(function() p.InputTransparent = true end) -- Deja pasar los clicks seguramente
         end
     else
         getgenv().ClickingActive = false
@@ -365,6 +370,7 @@ ReadyButton.MouseButton1Click:Connect(function()
             p.BackgroundTransparency = 0
             p.TextLabel.TextTransparency = 0
             p.Active = true
+            pcall(function() p.InputTransparent = false end)
         end
     end
 end)
@@ -390,16 +396,7 @@ local function performNativeGameTouch(x, y)
             end
         end
 
-        -- 2. Trigger Mobile TouchTap natively via UserInputService without changing device type
-        if UserInputService.TouchEnabled then
-            local fakeTouchVector = Vector2.new(x, y)
-            -- Dispatch TouchTap through internal Game engine bindings
-            for _, connection in pairs(getconnections(UserInputService.TouchTap)) do
-                connection:Fire({fakeTouchVector}, false)
-            end
-        end
-
-        -- 3. Trigger Active Tool in Character if equipped
+        -- 2. Trigger Active Tool in Character if equipped
         local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
         if tool then
             tool:Activate()
@@ -407,21 +404,31 @@ local function performNativeGameTouch(x, y)
     end)
 end
 
--- Execution Loop
-task.spawn(function()
-    while getgenv().AutoClickerExecuted do
-        if getgenv().ClickingActive and #clickPoints > 0 then
-            for _, pointFrame in pairs(clickPoints) do
-                if not getgenv().ClickingActive then break end
+-- Execution Loop using RunService (Non-blocking)
+local accumulator = 0
+local heartbeatConnection
+heartbeatConnection = RunService.Heartbeat:Connect(function(deltaTime)
+    if not getgenv().AutoClickerExecuted then 
+        if heartbeatConnection then heartbeatConnection:Disconnect() end
+        return 
+    end
+    if not getgenv().ClickingActive then return end
+    if #clickPoints == 0 then return end
 
-                local x = pointFrame.AbsolutePosition.X + (pointFrame.AbsoluteSize.X / 2)
-                local y = pointFrame.AbsolutePosition.Y + (pointFrame.AbsoluteSize.Y / 2)
+    accumulator = accumulator + deltaTime
 
+    if accumulator >= clickInterval then
+        accumulator = 0
+
+        for _, pointFrame in ipairs(clickPoints) do
+            if not getgenv().ClickingActive then break end
+
+            local x = pointFrame.AbsolutePosition.X + (pointFrame.AbsoluteSize.X / 2)
+            local y = pointFrame.AbsolutePosition.Y + (pointFrame.AbsoluteSize.Y / 2)
+
+            task.defer(function()
                 performNativeGameTouch(x, y)
-            end
-            task.wait(clickInterval)
-        else
-            task.wait(0.1)
+            end)
         end
     end
 end)
