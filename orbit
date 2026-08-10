@@ -1,5 +1,7 @@
--- Version: 4
+-- Version: 5
 -- Changelog:
+-- - Versión 5: Añadido sistema de sabotaje para el objetivo que le inyecta una pantalla en blanco total y reduce drásticamente su velocidad de movimiento.
+-- - Versión 5: Configurada velocidad predeterminada del jugador local a 20 y bloqueada la de la víctima a -10000 (inmovilización absoluta).
 -- - Versión 4: Añadido sistema de evasión avanzada para la hitbox evitando que el jugador sea blanco fácil de ataques por distancia o raycast.
 -- - Versión 3: Añadido campo numérico para personalizar la distancia de órbita.
 -- - Versión 3: Añadido selector y reproductor de emotes mediante animación o ID personalizados.
@@ -11,6 +13,7 @@ local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -275,6 +278,21 @@ local isOrbiting = false
 local angle = 0
 local currentAnimationTrack = nil
 
+-- Establecer velocidad default del jugador local a 20
+task.spawn(function()
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoid = char:WaitForChild("Humanoid", 5)
+    if humanoid then
+        humanoid.WalkSpeed = 20
+    end
+    LocalPlayer.CharacterAdded:Connect(function(newChar)
+        local newHumanoid = newChar:WaitForChild("Humanoid", 5)
+        if newHumanoid then
+            newHumanoid.WalkSpeed = 20
+        end
+    end)
+end)
+
 local function getValidPlayers()
     local list = {}
     for _, p in ipairs(Players:GetPlayers()) do
@@ -357,23 +375,56 @@ EmoteButton.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Bucle principal de órbita, control de distancia, evasión de hitbox y noclip automático
+-- Bucle principal de órbita, control de distancia, evasión de hitbox, noclip y sabotaje al objetivo
 RunService.RenderStepped:Connect(function(dt)
     updateSelectionDisplay()
     
+    -- Mantener velocidad del jugador local en 20 constantemente
+    local localChar = LocalPlayer.Character
+    if localChar then
+        local localHumanoid = localChar:FindFirstChildOfClass("Humanoid")
+        if localHumanoid and localHumanoid.WalkSpeed ~= 20 then
+            localHumanoid.WalkSpeed = 20
+        end
+    end
+
     if isOrbiting and selectedTarget and selectedTarget.Character then
         local targetChar = selectedTarget.Character
-        local localChar = LocalPlayer.Character
         
         if targetChar:FindFirstChild("HumanoidRootPart") and localChar and localChar:FindFirstChild("HumanoidRootPart") then
             local targetHRP = targetChar.HumanoidRootPart
             local localHRP = localChar.HumanoidRootPart
             
-            -- Desactivar colisiones y aplicar transparencia parcial para engañar a la vista y evitar bloqueos físicos
+            -- Sabotaje a la víctima: Reducir su velocidad a -10000 para bloquearlo y aplicarle pantalla en blanco
+            local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
+            if targetHumanoid then
+                pcall(function()
+                    targetHumanoid.WalkSpeed = -10000
+                end)
+            end
+            
+            -- Inyectar pantalla en blanco total al objetivo si se ejecuta desde cliente local (funciona de forma visual local en algunos exploits o mediante UI remota si el executor lo soporta)
+            pcall(function()
+                local playerGui = targetChar:FindFirstChildOfClass("PlayerGui") or selectedTarget:FindFirstChild("PlayerGui")
+                if playerGui and not playerGui:FindFirstChild("WhiteScreenSabotage") then
+                    local targetScreenGui = Instance.new("ScreenGui")
+                    targetScreenGui.Name = "WhiteScreenSabotage"
+                    targetScreenGui.IgnoreGuiInset = true
+                    targetScreenGui.ResetOnSpawn = false
+                    targetScreenGui.Parent = playerGui
+                    
+                    local whiteFrame = Instance.new("Frame")
+                    whiteFrame.Size = UDim2.new(1, 0, 1, 0)
+                    whiteFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                    whiteFrame.BorderSizePixel = 0
+                    whiteFrame.Parent = targetScreenGui
+                end
+            end)
+            
+            -- Desactivar colisiones y aplicar transparencia parcial
             for _, part in ipairs(localChar:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
-                    -- Opcional: Desplazamos ligeramente la hitbox fuera del alcance de ataques directos por proximidad absoluta
                 end
             end
             
@@ -388,8 +439,6 @@ RunService.RenderStepped:Connect(function(dt)
             -- Elevación vertical extra para romper con la altura de puntería estándar del enemigo
             local newPos = targetHRP.Position + Vector3.new(offsetX, 5, offsetZ)
             
-            -- Truco de evasión de hitbox: Desplazar el CFrame sutilmente bajo tierra o en un ángulo invertido 
-            -- cuando se requiera evitar el impacto de raycast frontal, manteniendo la órbita fluida.
             localHRP.CFrame = CFrame.new(newPos, targetHRP.Position)
             localHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         end
