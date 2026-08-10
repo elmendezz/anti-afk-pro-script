@@ -11,10 +11,12 @@
 -- [+] Dependencias: Roblox Core Services, Soporte de Ejecutor (queue_on_teleport).
 -- [Version: 2]
 -- [+] Corrección total de movilidad: Integración del PlayerModule (`GetMoveVector()`) para soporte completo de Joystick móvil, Gamepad (Stick) y Teclado simultáneos.
--- [+] Adición del módulo Updater conectado a GitHub (`https://raw.githubusercontent.com/elmendezz/anti-afk-pro-script/refs/heads/main/flytool`) con botón de actualización directa en la GUI.
+-- [+] Adición del módulo Updater conectado y botón de actualización directa en la GUI.
 -- [+] Optimización de bucles asíncronos, rediseño de distribución de botones y estabilidad general del sistema.
 -- [Version: 3]
--- [+] Corrección de inversión en el eje vertical del stick (movimiento hacia adelante y atrás corregido mediante la inversión del vector Z).
+-- [+] Ajuste de dirección de vuelo para evitar inversiones en el sentido del stick.
+-- [+] Implementación de anclaje de posición estricto (Modo Ladrillo) al dejar de mover el joystick, anulando cualquier fuerza física externa o movimiento fantasma en los juegos.
+-- [+] Rediseño del modo minimizado para mostrar única y exclusivamente los 3 botones principales (Volar, Boost y Noclip) en formato compacto.
 
 local Version = 3
 
@@ -275,14 +277,31 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
+-- Minimizado exclusivo: Muestra solo Volar, Boost y Noclip
 MinimizeBtn.MouseButton1Click:Connect(function()
     States.Minimized = not States.Minimized
     if States.Minimized then
-        Content.Visible = false
-        MainFrame.Size = UDim2.new(0, 300, 0, 35)
+        AntiAFKBtn.Visible = false
+        UpdateBtn.Visible = false
+        StatsFrame.Visible = false
+        
+        VolarBtn.Visible = true
+        BoostBtn.Visible = true
+        NoclipBtn.Visible = true
+        
+        MainFrame.Size = UDim2.new(0, 300, 0, 95)
+        MinimizeBtn.Text = "+"
     else
-        Content.Visible = true
+        AntiAFKBtn.Visible = true
+        UpdateBtn.Visible = true
+        StatsFrame.Visible = true
+        
+        VolarBtn.Visible = true
+        BoostBtn.Visible = true
+        NoclipBtn.Visible = true
+        
         MainFrame.Size = UDim2.new(0, 300, 0, 300)
+        MinimizeBtn.Text = "-"
     end
 end)
 
@@ -338,12 +357,14 @@ UpdateBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- [ LÓGICA DE VUELO UNIVERSAL (Joystick, Gamepad y Teclado) ] --
+-- [ LÓGICA DE VUELO UNIVERSAL CON BLOQUEO DE POSICIÓN ESTRICTO ] --
 local BodyVelocity, BodyGyro
+local lockedPosition = nil
 
 local function StopFly()
     if BodyVelocity then BodyVelocity:Destroy() BodyVelocity = nil end
     if BodyGyro then BodyGyro:Destroy() BodyGyro = nil end
+    lockedPosition = nil
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         LocalPlayer.Character.Humanoid.PlatformStand = false
     end
@@ -395,10 +416,11 @@ BoostBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Bucle Asíncrono de Vuelo con soporte absoluto de Sticks y Teclados (Eje Z corregido)
+-- Bucle Asíncrono de Vuelo con Anclaje Cinemático (Modo Ladrillo si no se mueve el stick)
 task.spawn(function()
     RunService.RenderStepped:Connect(function()
         if States.Flying and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and BodyVelocity and BodyGyro then
+            local HRP = LocalPlayer.Character.HumanoidRootPart
             local speed = Speeds[States.FlySpeed]
             local camCFrame = Camera.CFrame
             BodyGyro.CFrame = camCFrame
@@ -409,12 +431,20 @@ task.spawn(function()
             end
             
             if moveVector.Magnitude > 0 then
-                -- Corregido: Se invierte el eje Z (-moveVector.Z) para alinear correctamente adelante y atrás
-                local velocityDir = (camCFrame.RightVector * moveVector.X) - (camCFrame.LookVector * moveVector.Z)
+                lockedPosition = nil -- Desbloquear al usar el stick
+                local velocityDir = (camCFrame.RightVector * moveVector.X) + (camCFrame.LookVector * moveVector.Z)
                 BodyVelocity.Velocity = velocityDir * speed
+                HRP.AssemblyLinearVelocity = Vector3.zero
             else
+                if not lockedPosition then
+                    lockedPosition = HRP.Position -- Fijar posición estricta en el aire
+                end
                 BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                HRP.AssemblyLinearVelocity = Vector3.zero
+                HRP.CFrame = CFrame.new(lockedPosition, lockedPosition + camCFrame.LookVector)
             end
+        else
+            lockedPosition = nil
         end
     end)
 end)
