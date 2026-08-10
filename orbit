@@ -1,0 +1,238 @@
+-- Version: 2
+-- Changelog:
+-- - Versión 2: Reemplazado el script de eliminación por un sistema de órbita circular alrededor de un jugador seleccionado.
+-- - Añadida interfaz gráfica con botón de minimizar en una burbuja flotante (bolita).
+-- - Añadido interruptor (toggle) de activación y selección de jugadores mediante botones de flechas.
+-- - Dependencias: Ninguna externa, uso nativo de Luau y Roblox Services.
+
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+if CoreGui:FindFirstChild("OrbitExecutorGui") then
+    CoreGui.OrbitExecutorGui:Destroy()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "OrbitExecutorGui"
+ScreenGui.Parent = CoreGui
+ScreenGui.ResetOnSpawn = false
+
+-- Ventana Principal
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.new(0.5, -125, 0.5, -100)
+MainFrame.Size = UDim2.new(0, 250, 0, 180)
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = MainFrame
+
+-- Barra Superior / Título
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Parent = MainFrame
+Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Title.BorderSizePixel = 0
+Title.Size = UDim2.new(1, 0, 0, 35)
+Title.Font = Enum.Font.SourceSansBold
+Title.Text = "Orbit Target"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 16
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 10)
+TitleCorner.Parent = Title
+
+-- Botón Minimizar (-)
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Name = "MinimizeButton"
+MinimizeButton.Parent = Title
+MinimizeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+MinimizeButton.BorderSizePixel = 0
+MinimizeButton.Position = UDim2.new(1, -30, 0.5, -12)
+MinimizeButton.Size = UDim2.new(0, 24, 0, 24)
+MinimizeButton.Font = Enum.Font.SourceSansBold
+MinimizeButton.Text = "-"
+MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinimizeButton.TextSize = 16
+
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(1, 0)
+MinCorner.Parent = MinimizeButton
+
+-- Botón Flotante (Bolita para restaurar)
+local BubbleButton = Instance.new("TextButton")
+BubbleButton.Name = "BubbleButton"
+BubbleButton.Parent = ScreenGui
+BubbleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+BubbleButton.BorderSizePixel = 0
+BubbleButton.Position = UDim2.new(0, 20, 0.5, -25)
+BubbleButton.Size = UDim2.new(0, 50, 0, 50)
+BubbleButton.Font = Enum.Font.SourceSansBold
+BubbleButton.Text = "O"
+BubbleButton.TextColor3 = Color3.fromRGB(0, 255, 128)
+BubbleButton.TextSize = 20
+BubbleButton.Visible = false
+BubbleButton.Active = true
+BubbleButton.Draggable = true
+
+local BubbleCorner = Instance.new("UICorner")
+BubbleCorner.CornerRadius = UDim.new(1, 0)
+BubbleCorner.Parent = BubbleButton
+
+-- Contenedor de Selección con Flechas
+local SelectionLabel = Instance.new("TextLabel")
+SelectionLabel.Parent = MainFrame
+SelectionLabel.BackgroundTransparency = 1
+SelectionLabel.Position = UDim2.new(0, 10, 0, 45)
+SelectionLabel.Size = UDim2.new(1, -20, 0, 30)
+SelectionLabel.Font = Enum.Font.SourceSansBold
+SelectionLabel.Text = "Seleccionar: Ninguno"
+SelectionLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+SelectionLabel.TextSize = 14
+
+local PrevButton = Instance.new("TextButton")
+PrevButton.Parent = MainFrame
+PrevButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+PrevButton.BorderSizePixel = 0
+PrevButton.Position = UDim2.new(0, 10, 0, 80)
+PrevButton.Size = UDim2.new(0, 40, 0, 35)
+PrevButton.Font = Enum.Font.SourceSansBold
+PrevButton.Text = "<"
+PrevButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+PrevButton.TextSize = 18
+
+local PrevCorner = Instance.new("UICorner")
+PrevCorner.CornerRadius = UDim.new(0, 6)
+PrevCorner.Parent = PrevButton
+
+local NextButton = Instance.new("TextButton")
+NextButton.Parent = MainFrame
+NextButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+NextButton.BorderSizePixel = 0
+NextButton.Position = UDim2.new(1, -50, 0, 80)
+NextButton.Size = UDim2.new(0, 40, 0, 35)
+NextButton.Font = Enum.Font.SourceSansBold
+NextButton.Text = ">"
+NextButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+NextButton.TextSize = 18
+
+local NextCorner = Instance.new("UICorner")
+NextCorner.CornerRadius = UDim.new(0, 6)
+NextCorner.Parent = NextButton
+
+-- Botón Toggle de Activación
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Parent = MainFrame
+ToggleButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Position = UDim2.new(0, 60, 0, 80)
+ToggleButton.Size = UDim2.new(1, -120, 0, 35)
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.Text = "OFF"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextSize = 14
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 6)
+ToggleCorner.Parent = ToggleButton
+
+-- Lógica de Minimizar / Restaurar
+MinimizeButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = false
+    BubbleButton.Visible = true
+end)
+
+BubbleButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = true
+    BubbleButton.Visible = false
+end)
+
+-- Variables de Estado
+local playersList = {}
+local currentIndex = 1
+local selectedTarget = nil
+local isOrbiting = false
+local angle = 0
+
+-- Función para actualizar la lista de jugadores disponibles
+local function getValidPlayers()
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(list, p)
+        end
+    end
+    return list
+end
+
+local function updateSelectionDisplay()
+    playersList = getValidPlayers()
+    if #playersList == 0 then
+        selectedTarget = nil
+        SelectionLabel.Text = "Seleccionar: Ninguno"
+        return
+    end
+    
+    if currentIndex > #playersList then
+        currentIndex = 1
+    elseif currentIndex < 1 then
+        currentIndex = #playersList
+    end
+    
+    selectedTarget = playersList[currentIndex]
+    SelectionLabel.Text = "Objetivo: " .. selectedTarget.Name
+end
+
+PrevButton.MouseButton1Click:Connect(function()
+    currentIndex = currentIndex - 1
+    updateSelectionDisplay()
+end)
+
+NextButton.MouseButton1Click:Connect(function()
+    currentIndex = currentIndex + 1
+    updateSelectionDisplay()
+end)
+
+ToggleButton.MouseButton1Click:Connect(function()
+    isOrbiting = not isOrbiting
+    if isOrbiting then
+        ToggleButton.Text = "ON"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
+    else
+        ToggleButton.Text = "OFF"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+    end
+end)
+
+-- Bucle principal de órbita ligera sin lag
+RunService.RenderStepped:Connect(function(dt)
+    updateSelectionDisplay()
+    
+    if isOrbiting and selectedTarget and selectedTarget.Character then
+        local targetChar = selectedTarget.Character
+        local localChar = LocalPlayer.Character
+        
+        if targetChar:FindFirstChild("HumanoidRootPart") and localChar and localChar:FindFirstChild("HumanoidRootPart") then
+            local targetHRP = targetChar.HumanoidRootPart
+            local localHRP = localChar.HumanoidRootPart
+            
+            angle = angle + (dt * 5) -- Velocidad de giro controlada
+            local radius = 6 -- Distancia ligera alrededor del jugador
+            
+            local offsetX = math.cos(angle) * radius
+            local offsetZ = math.sin(angle) * radius
+            
+            local newPos = targetHRP.Position + Vector3.new(offsetX, 3, offsetZ)
+            localHRP.CFrame = CFrame.new(newPos, targetHRP.Position)
+        end
+    end
+end)
