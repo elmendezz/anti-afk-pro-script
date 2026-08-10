@@ -9,8 +9,12 @@
 -- [+] Sistema de confirmación para cerrar y botón de minimizar.
 -- [+] Módulo de auto-reconexión ante desconexiones inesperadas con permanencia de script (queue_on_teleport).
 -- [+] Dependencias: Roblox Core Services, Soporte de Ejecutor (queue_on_teleport).
+-- [Version: 2]
+-- [+] Corrección total de movilidad: Integración del PlayerModule (`GetMoveVector()`) para soporte completo de Joystick móvil, Gamepad (Stick) y Teclado simultáneos.
+-- [+] Adición del módulo Updater conectado a GitHub (`https://raw.githubusercontent.com/elmendezz/anti-afk-pro-script/refs/heads/main/flytool`) con botón de actualización directa en la GUI.
+-- [+] Optimización de bucles asíncronos, rediseño de distribución de botones y estabilidad general del sistema.
 
-local Version = 1
+local Version = 2
 
 -- [ DEPENDENCIAS Y SERVICIOS ] --
 local Players = game:GetService("Players")
@@ -26,6 +30,13 @@ local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+
+-- Obtener controles del jugador para soportar Joystick, Gamepad y Teclado universalmente
+local Controls = nil
+pcall(function()
+    local PlayerModule = require(LocalPlayer.PlayerScripts:WaitForChild("PlayerModule"))
+    Controls = PlayerModule:GetControls()
+end)
 
 -- Limpiar versiones anteriores para evitar duplicados
 if getgenv().MendezFlyTool_Loaded then
@@ -46,7 +57,7 @@ local States = {
 }
 
 local Speeds = {
-    [0] = 50,  -- Base (Off visualmente en el boost, pero es la velocidad por defecto si se activa volar)
+    [0] = 50,
     [1] = 100,
     [2] = 150,
     [3] = 250,
@@ -58,7 +69,7 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MendezFlyTool_UI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
--- Protección para ejecutar en CoreGui
+
 local success, err = pcall(function()
     ScreenGui.Parent = CoreGui
 end)
@@ -70,8 +81,8 @@ local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
 MainFrame.BackgroundColor3 = Color3.fromRGB(19, 19, 20) -- Gemini Dark Background
-MainFrame.Position = UDim2.new(0.5, -150, 0.5, -125)
-MainFrame.Size = UDim2.new(0, 300, 0, 270)
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -150)
+MainFrame.Size = UDim2.new(0, 300, 0, 300)
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
 
@@ -89,7 +100,7 @@ TitleBar.BorderSizePixel = 0
 local TitleUICorner = Instance.new("UICorner")
 TitleUICorner.CornerRadius = UDim.new(0, 12)
 TitleUICorner.Parent = TitleBar
--- Fix bottom corners of title bar
+
 local TitleFix = Instance.new("Frame")
 TitleFix.Parent = TitleBar
 TitleFix.BackgroundColor3 = Color3.fromRGB(30, 31, 34)
@@ -103,9 +114,9 @@ TitleLabel.BackgroundTransparency = 1
 TitleLabel.Position = UDim2.new(0, 15, 0, 0)
 TitleLabel.Size = UDim2.new(0.6, 0, 1, 0)
 TitleLabel.Font = Enum.Font.GothamBold
-TitleLabel.Text = "MendezFlyTool"
+TitleLabel.Text = "MendezFlyTool (v" .. Version .. ")"
 TitleLabel.TextColor3 = Color3.fromRGB(138, 180, 248) -- Gemini Blue
-TitleLabel.TextSize = 16
+TitleLabel.TextSize = 15
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 local MinimizeBtn = Instance.new("TextButton")
@@ -128,7 +139,7 @@ CloseBtn.Text = "X"
 CloseBtn.TextColor3 = Color3.fromRGB(255, 76, 76)
 CloseBtn.TextSize = 16
 
--- Contenedor de Botones
+-- Contenedor General
 local Content = Instance.new("Frame")
 Content.Name = "Content"
 Content.Parent = MainFrame
@@ -142,11 +153,11 @@ local function CreateButton(name, text, pos, color)
     btn.Parent = Content
     btn.BackgroundColor3 = color
     btn.Position = pos
-    btn.Size = UDim2.new(0, 120, 0, 35)
+    btn.Size = UDim2.new(0, 120, 0, 30)
     btn.Font = Enum.Font.GothamSemibold
     btn.Text = text
     btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.TextSize = 14
+    btn.TextSize = 13
     
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 8)
@@ -154,17 +165,32 @@ local function CreateButton(name, text, pos, color)
     return btn
 end
 
-local VolarBtn = CreateButton("VolarBtn", "Volar: OFF", UDim2.new(0, 20, 0, 15), Color3.fromRGB(255, 76, 76))
-local BoostBtn = CreateButton("BoostBtn", "Boost $: OFF", UDim2.new(0, 160, 0, 15), Color3.fromRGB(60, 64, 67))
-local NoclipBtn = CreateButton("NoclipBtn", "Noclip: OFF", UDim2.new(0, 20, 0, 60), Color3.fromRGB(60, 64, 67))
-local AntiAFKBtn = CreateButton("AntiAFKBtn", "Anti-AFK: OFF", UDim2.new(0, 160, 0, 60), Color3.fromRGB(60, 64, 67))
+local VolarBtn = CreateButton("VolarBtn", "Volar: OFF", UDim2.new(0, 20, 0, 12), Color3.fromRGB(255, 76, 76))
+local BoostBtn = CreateButton("BoostBtn", "Boost $: OFF", UDim2.new(0, 160, 0, 12), Color3.fromRGB(60, 64, 67))
+local NoclipBtn = CreateButton("NoclipBtn", "Noclip: OFF", UDim2.new(0, 20, 0, 52), Color3.fromRGB(60, 64, 67))
+local AntiAFKBtn = CreateButton("AntiAFKBtn", "Anti-AFK: OFF", UDim2.new(0, 160, 0, 52), Color3.fromRGB(60, 64, 67))
+
+-- Botón de Actualización (Updater)
+local UpdateBtn = Instance.new("TextButton")
+UpdateBtn.Name = "UpdateBtn"
+UpdateBtn.Parent = Content
+UpdateBtn.BackgroundColor3 = Color3.fromRGB(40, 42, 46)
+UpdateBtn.Position = UDim2.new(0, 20, 0, 92)
+UpdateBtn.Size = UDim2.new(0, 260, 0, 28)
+UpdateBtn.Font = Enum.Font.GothamSemibold
+UpdateBtn.Text = "Actualizar desde GitHub"
+UpdateBtn.TextColor3 = Color3.fromRGB(138, 180, 248)
+UpdateBtn.TextSize = 13
+local UpdateCorner = Instance.new("UICorner")
+UpdateCorner.CornerRadius = UDim.new(0, 8)
+UpdateCorner.Parent = UpdateBtn
 
 -- Sección de Estadísticas
 local StatsFrame = Instance.new("Frame")
 StatsFrame.Parent = Content
 StatsFrame.BackgroundColor3 = Color3.fromRGB(30, 31, 34)
-StatsFrame.Position = UDim2.new(0, 20, 0, 110)
-StatsFrame.Size = UDim2.new(0, 260, 0, 110)
+StatsFrame.Position = UDim2.new(0, 20, 0, 130)
+StatsFrame.Size = UDim2.new(0, 260, 0, 100)
 local StatsCorner = Instance.new("UICorner")
 StatsCorner.CornerRadius = UDim.new(0, 8)
 StatsCorner.Parent = StatsFrame
@@ -175,18 +201,18 @@ local function CreateStatLabel(name, pos)
     lbl.Parent = StatsFrame
     lbl.BackgroundTransparency = 1
     lbl.Position = pos
-    lbl.Size = UDim2.new(1, -20, 0, 30)
+    lbl.Size = UDim2.new(1, -20, 0, 25)
     lbl.Font = Enum.Font.Gotham
     lbl.Text = name .. ": --"
     lbl.TextColor3 = Color3.fromRGB(227, 227, 227)
-    lbl.TextSize = 14
+    lbl.TextSize = 13
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     return lbl
 end
 
-local FPSLabel = CreateStatLabel("FPS", UDim2.new(0, 10, 0, 10))
-local PingLabel = CreateStatLabel("Ping", UDim2.new(0, 10, 0, 40))
-local TimeLabel = CreateStatLabel("AFK Time", UDim2.new(0, 10, 0, 70))
+local FPSLabel = CreateStatLabel("FPS", UDim2.new(0, 10, 0, 8))
+local PingLabel = CreateStatLabel("Ping", UDim2.new(0, 10, 0, 35))
+local TimeLabel = CreateStatLabel("AFK Time", UDim2.new(0, 10, 0, 62))
 
 -- Interfaz de Confirmación (Cerrar)
 local ConfirmFrame = Instance.new("Frame")
@@ -221,7 +247,6 @@ TitleBar.InputBegan:Connect(function(input)
         dragging = true
         dragStart = input.Position
         startPos = MainFrame.Position
-        
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
                 dragging = false
@@ -248,7 +273,6 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- [ FUNCIONES DE LOS BOTONES DE VENTANA ] --
 MinimizeBtn.MouseButton1Click:Connect(function()
     States.Minimized = not States.Minimized
     if States.Minimized then
@@ -256,7 +280,7 @@ MinimizeBtn.MouseButton1Click:Connect(function()
         MainFrame.Size = UDim2.new(0, 300, 0, 35)
     else
         Content.Visible = true
-        MainFrame.Size = UDim2.new(0, 300, 0, 270)
+        MainFrame.Size = UDim2.new(0, 300, 0, 300)
     end
 end)
 
@@ -273,9 +297,47 @@ YesBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
--- [ LÓGICA DE VUELO Y MOVIMIENTO ] --
+-- [ SISTEMA UPDATER DESDE GITHUB ] --
+UpdateBtn.MouseButton1Click:Connect(function()
+    UpdateBtn.Text = "Descargando..."
+    UpdateBtn.BackgroundColor3 = Color3.fromRGB(242, 139, 130)
+    
+    task.spawn(function()
+        local success, result = pcall(function()
+            return game:HttpGet("https://raw.githubusercontent.com/elmendezz/anti-afk-pro-script/refs/heads/main/flytool")
+        end)
+        
+        if success and result and #result > 0 then
+            UpdateBtn.Text = "¡Actualizado!"
+            UpdateBtn.BackgroundColor3 = Color3.fromRGB(76, 255, 76)
+            StarterGui:SetCore("SendNotification", {
+                Title = "MendezFlyTool",
+                Text = "Actualización descargada. Ejecutando nueva versión...",
+                Duration = 3,
+            })
+            task.wait(1)
+            ScreenGui:Destroy()
+            getgenv().MendezFlyTool_Loaded = false
+            pcall(function()
+                loadstring(result)()
+            end)
+        else
+            UpdateBtn.Text = "Error al conectar"
+            UpdateBtn.BackgroundColor3 = Color3.fromRGB(255, 76, 76)
+            StarterGui:SetCore("SendNotification", {
+                Title = "MendezFlyTool",
+                Text = "No se pudo obtener la actualización del repositorio.",
+                Duration = 4,
+            })
+            task.wait(2)
+            UpdateBtn.Text = "Actualizar desde GitHub"
+            UpdateBtn.BackgroundColor3 = Color3.fromRGB(40, 42, 46)
+        end
+    end)
+end)
+
+-- [ LÓGICA DE VUELO UNIVERSAL (Joystick, Gamepad y Teclado) ] --
 local BodyVelocity, BodyGyro
-local Control = {F = 0, B = 0, L = 0, R = 0}
 
 local function StopFly()
     if BodyVelocity then BodyVelocity:Destroy() BodyVelocity = nil end
@@ -309,11 +371,11 @@ VolarBtn.MouseButton1Click:Connect(function()
     States.Flying = not States.Flying
     if States.Flying then
         VolarBtn.Text = "Volar: ON"
-        VolarBtn.BackgroundColor3 = Color3.fromRGB(76, 255, 76) -- Verde activado
+        VolarBtn.BackgroundColor3 = Color3.fromRGB(76, 255, 76)
         StartFly()
     else
         VolarBtn.Text = "Volar: OFF"
-        VolarBtn.BackgroundColor3 = Color3.fromRGB(255, 76, 76) -- Rojo apagado
+        VolarBtn.BackgroundColor3 = Color3.fromRGB(255, 76, 76)
         StopFly()
     end
 end)
@@ -327,39 +389,26 @@ BoostBtn.MouseButton1Click:Connect(function()
         BoostBtn.BackgroundColor3 = Color3.fromRGB(60, 64, 67)
     else
         BoostBtn.Text = "Boost $: " .. States.FlySpeed
-        BoostBtn.BackgroundColor3 = Color3.fromRGB(138, 180, 248) -- Azul activo
+        BoostBtn.BackgroundColor3 = Color3.fromRGB(138, 180, 248)
     end
 end)
 
--- Capturar Teclas para Vuelo
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.W then Control.F = 1
-    elseif input.KeyCode == Enum.KeyCode.S then Control.B = -1
-    elseif input.KeyCode == Enum.KeyCode.A then Control.L = -1
-    elseif input.KeyCode == Enum.KeyCode.D then Control.R = 1 end
-end)
-
-UserInputService.InputEnded:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.W then Control.F = 0
-    elseif input.KeyCode == Enum.KeyCode.S then Control.B = 0
-    elseif input.KeyCode == Enum.KeyCode.A then Control.L = 0
-    elseif input.KeyCode == Enum.KeyCode.D then Control.R = 0 end
-end)
-
--- Bucle Asíncrono de Vuelo
+-- Bucle Asíncrono de Vuelo con soporte absoluto de Sticks y Teclados
 task.spawn(function()
     RunService.RenderStepped:Connect(function()
         if States.Flying and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and BodyVelocity and BodyGyro then
             local speed = Speeds[States.FlySpeed]
             local camCFrame = Camera.CFrame
-            
             BodyGyro.CFrame = camCFrame
-            local moveDir = Vector3.new(Control.L + Control.R, 0, Control.F + Control.B)
             
-            if moveDir.Magnitude > 0 then
-                BodyVelocity.Velocity = camCFrame:VectorToWorldSpace(moveDir.Unit * speed)
+            local moveVector = Vector3.new(0, 0, 0)
+            if Controls then
+                moveVector = Controls:GetMoveVector()
+            end
+            
+            if moveVector.Magnitude > 0 then
+                local velocityDir = (camCFrame.RightVector * moveVector.X) + (camCFrame.LookVector * moveVector.Z)
+                BodyVelocity.Velocity = velocityDir * speed
             else
                 BodyVelocity.Velocity = Vector3.new(0, 0, 0)
             end
@@ -391,7 +440,6 @@ task.spawn(function()
     end)
 end)
 
--- Restaurar estados si el jugador muere/reaparece
 LocalPlayer.CharacterAdded:Connect(function()
     if States.Flying then
         task.wait(1)
@@ -399,7 +447,7 @@ LocalPlayer.CharacterAdded:Connect(function()
     end
 end)
 
--- [ LÓGICA ANTI-AFK Y NOTIFICACIONES ] --
+-- [ LÓGICA ANTI-AFK CON VIBRACIÓN Y NOTIFICACIÓN ] --
 AntiAFKBtn.MouseButton1Click:Connect(function()
     States.AntiAFK = not States.AntiAFK
     if States.AntiAFK then
@@ -416,7 +464,6 @@ LocalPlayer.Idled:Connect(function()
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.new(0,0))
         
-        -- Vibración brr-brr-brr
         pcall(function()
             if UserInputService:GetGamepadConnected(Enum.UserInputType.Gamepad1) then
                 HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Large, 1)
@@ -433,7 +480,6 @@ LocalPlayer.Idled:Connect(function()
             end
         end)
 
-        -- Notificación
         StarterGui:SetCore("SendNotification", {
             Title = "MendezFlyTool",
             Text = "Roblox intentó desconectarte por inactividad. Evitado.",
@@ -442,7 +488,7 @@ LocalPlayer.Idled:Connect(function()
     end
 end)
 
--- [ CONTADORES ASÍNCRONOS (FPS, PING, TIEMPO) ] --
+-- [ CONTADORES EN VIVO ASÍNCRONOS ] --
 task.spawn(function()
     local lastUpdate = tick()
     local frames = 0
@@ -456,14 +502,12 @@ task.spawn(function()
             frames = 0
             lastUpdate = currentTick
             
-            -- Actualizar Ping
             local ping = "N/A"
             pcall(function()
                 ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
             end)
             PingLabel.Text = "Ping: " .. ping .. " ms"
             
-            -- Actualizar Tiempo AFK
             local uptime = os.time() - States.StartTime
             local days = math.floor(uptime / 86400)
             local hours = math.floor((uptime % 86400) / 3600)
@@ -479,27 +523,28 @@ task.spawn(function()
     end)
 end)
 
--- [ SISTEMA DE AUTO-RECONEXIÓN CON PERMANENCIA ] --
--- Captura los errores nativos de desconexión y fuerza la reconexión al mismo servidor
+-- [ AUTO-RECONEXIÓN Y PERMANENCIA ] --
 task.spawn(function()
     GuiService.ErrorMessageChanged:Connect(function(msg)
         if getgenv().MendezFlyTool_Loaded then
-            -- Prepara la re-ejecución del script en el teleport
             local queue_teleport = syn and syn.queue_on_teleport or queue_on_teleport or fluxus and fluxus.queue_on_teleport
             if queue_teleport then
                 queue_teleport([[
                     repeat task.wait() until game:IsLoaded()
-                    -- Aquí se volvería a cargar el script asumiendo que lo tienes en auto-execute
-                    -- o puedes hacer un request HTTP a tu archivo si lo alojas.
-                    print("MendezFlyTool re-iniciado tras reconexión.")
+                    task.wait(2)
+                    local success, result = pcall(function()
+                        return game:HttpGet("https://raw.githubusercontent.com/elmendezz/anti-afk-pro-script/refs/heads/main/flytool")
+                    end)
+                    if success and result then
+                        loadstring(result)()
+                    end
                 ]])
             end
 
-            -- Si detecta el mensaje de desconexión
-            if msg and string.find(msg:lower(), "disconnect") or string.find(msg:lower(), "kicked") then
+            if msg and (string.find(msg:lower(), "disconnect") or string.find(msg:lower(), "kicked")) then
                 StarterGui:SetCore("SendNotification", {
                     Title = "Reconectando...",
-                    Text = "Te han desconectado. Entrando de nuevo en 3s...",
+                    Text = "Desconexión detectada. Reingresando al servidor...",
                     Duration = 3,
                 })
                 task.wait(3)
