@@ -14,9 +14,9 @@ local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local HapticService = game:GetService("HapticService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 local clickPoints = {}
 local clickInterval = 0.1
 local availableIntervals = {0.01, 0.05, 0.1, 0.5, 1.0}
@@ -199,7 +199,7 @@ SpeedButton.MouseButton1Click:Connect(function()
     SpeedLabel.Text = "Intervalo: " .. tostring(clickInterval) .. "s"
 end)
 
--- Point Creation Mechanism without locking controls
+-- Point Creation Mechanism
 local function createPoint(position)
     local pointNumber = #clickPoints + 1
     if pointNumber > 10 then return end
@@ -227,7 +227,6 @@ local function createPoint(position)
     PointLabel.TextColor3 = Color3.fromRGB(20, 20, 20)
     PointLabel.TextSize = 16
 
-    -- Independent isolated point dragging
     local pointDragging = false
     local pointDragStart, pointStartPos, pTouch
 
@@ -370,7 +369,45 @@ ReadyButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Click Engine in 3D Game World
+-- Native In-Game Touch Simulation Engine (Bypasses PC Input Mode)
+local function performNativeGameTouch(x, y)
+    pcall(function()
+        -- 1. Raycast from camera to world coordinates to interact with objects in-game
+        local unitRay = Camera:ScreenPointToRay(x, y)
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        if LocalPlayer.Character then
+            raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, ScreenGui}
+        end
+        
+        local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, raycastParams)
+        if result and result.Instance then
+            local hitPart = result.Instance
+            -- Check for ClickDetectors on hit object
+            local detector = hitPart:FindFirstChildOfClass("ClickDetector") or hitPart.Parent:FindFirstChildOfClass("ClickDetector")
+            if detector and fireclickdetector then
+                fireclickdetector(detector)
+            end
+        end
+
+        -- 2. Trigger Mobile TouchTap natively via UserInputService without changing device type
+        if UserInputService.TouchEnabled then
+            local fakeTouchVector = Vector2.new(x, y)
+            -- Dispatch TouchTap through internal Game engine bindings
+            for _, connection in pairs(getconnections(UserInputService.TouchTap)) do
+                connection:Fire({fakeTouchVector}, false)
+            end
+        end
+
+        -- 3. Trigger Active Tool in Character if equipped
+        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if tool then
+            tool:Activate()
+        end
+    end)
+end
+
+-- Execution Loop
 task.spawn(function()
     while getgenv().AutoClickerExecuted do
         if getgenv().ClickingActive and #clickPoints > 0 then
@@ -380,14 +417,7 @@ task.spawn(function()
                 local x = pointFrame.AbsolutePosition.X + (pointFrame.AbsoluteSize.X / 2)
                 local y = pointFrame.AbsolutePosition.Y + (pointFrame.AbsoluteSize.Y / 2)
 
-                pcall(function()
-                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-                    task.wait(0.005)
-                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-                    VirtualInputManager:SendTouchEvent(2001, 0, x, y)
-                    task.wait(0.005)
-                    VirtualInputManager:SendTouchEvent(2001, 2, x, y)
-                end)
+                performNativeGameTouch(x, y)
             end
             task.wait(clickInterval)
         else
@@ -397,4 +427,4 @@ task.spawn(function()
 end)
 
 -- Spawn initial point
-createPoint(UDim2.new(0.5, -17, 0.4, 0))
+createPoint(UDim2.new(0.5, -17, 0.4, -17))
