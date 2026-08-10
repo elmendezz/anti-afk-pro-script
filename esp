@@ -1,8 +1,9 @@
--- Version: 1
+-- Version: 2
 -- Changelog:
 -- * Version:1 - Implementado sistema ESP completo (Enemigos en Rojo, Amigos en Verde con distancia).
 -- * Version:1 - Creada interfaz gráfica (GUI) flotante y estilizada con soporte para minimizar, cerrar y cambiar de objetivo.
 -- * Version:1 - Añadido sistema de teletransporte directo al jugador seleccionado con manejo de errores de reaparición.
+-- * Version:2 - Añadido componente Highlight para marcar el contorno de los jugadores (Rojo para enemigos, Verde para amigos).
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -170,12 +171,20 @@ local function createESP(player)
     textLabel.TextStrokeTransparency = 0
     textLabel.Parent = bill
 
-    espCache[player] = {Billboard = bill, Text = textLabel}
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESP_Highlight"
+    highlight.Adornee = nil
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0
+    highlight.Parent = ESPHolder
+
+    espCache[player] = {Billboard = bill, Text = textLabel, Highlight = highlight}
 end
 
 local function removeESP(player)
     if espCache[player] then
         espCache[player].Billboard:Destroy()
+        espCache[player].Highlight:Destroy()
         espCache[player] = nil
     end
 end
@@ -208,6 +217,8 @@ RunService.RenderStepped:Connect(function()
 
         if character and humanoidRootPart and localHRP then
             data.Billboard.Adornee = humanoidRootPart
+            data.Highlight.Adornee = character
+            
             local distance = math.floor((localHRP.Position - humanoidRootPart.Position).Magnitude)
             
             local isFriend = false
@@ -215,16 +226,19 @@ RunService.RenderStepped:Connect(function()
                 isFriend = LocalPlayer:IsFriendsWith(player.UserId)
             end)
 
-            if isFriend then
-                data.Text.TextColor3 = Color3.fromRGB(0, 255, 0) -- Verde para amigos
-            else
-                data.Text.TextColor3 = Color3.fromRGB(255, 0, 0) -- Rojo para enemigos
-            end
+            local targetColor = isFriend and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
 
+            data.Text.TextColor3 = targetColor
             data.Text.Text = player.Name .. "\n[" .. distance .. " studs]"
             data.Billboard.Enabled = true
+
+            data.Highlight.FillColor = targetColor
+            data.Highlight.OutlineColor = targetColor
+            data.Highlight.Enabled = true
         else
             data.Billboard.Enabled = false
+            data.Highlight.Enabled = false
+            data.Highlight.Adornee = nil
         end
     end
 end)
