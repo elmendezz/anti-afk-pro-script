@@ -13,14 +13,26 @@ getgenv().EditingPositions = true
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
+local HapticService = game:GetService("HapticService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 local clickPoints = {}
 local clickInterval = 0.1
+local availableIntervals = {0.01, 0.05, 0.1, 0.5, 1.0}
+local currentIntervalIdx = 3
+
+-- Triple vibration on startup (brr-brr-brr)
+task.spawn(function()
+    pcall(function()
+        for i = 1, 3 do
+            HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Small, 1)
+            task.wait(0.08)
+            HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Small, 0)
+            task.wait(0.08)
+        end
+    end)
+end)
 
 -- Fetch explicit UserId for angel200xp
 local targetUserId = 1
@@ -47,7 +59,7 @@ MainFrame.Name = "madebybloodofbatus"
 MainFrame.Parent = ScreenGui
 MainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 MainFrame.Position = UDim2.new(0.085, 0, 0.131, 0)
-MainFrame.Size = UDim2.new(0, 250, 0, 190)
+MainFrame.Size = UDim2.new(0, 260, 0, 230)
 MainFrame.Active = true
 
 UICornerMain.CornerRadius = UDim.new(0, 10)
@@ -69,38 +81,34 @@ task.spawn(function()
     end
 end)
 
--- Main Frame Touch Isolation Dragging
+-- Main Frame Dragging
 local mainDragging = false
-local mainDragInput, mainDragStart, mainStartPos
+local mainDragStart, mainStartPos, activeTouch
 
 MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) and not mainDragging then
         mainDragging = true
+        activeTouch = input
         mainDragStart = input.Position
         mainStartPos = MainFrame.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                mainDragging = false
-            end
-        end)
     end
 end)
 
 MainFrame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        mainDragInput = input
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input == mainDragInput and mainDragging then
+    if mainDragging and (input == activeTouch or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
         local delta = input.Position - mainDragStart
         MainFrame.Position = UDim2.new(mainStartPos.X.Scale, mainStartPos.X.Offset + delta.X, mainStartPos.Y.Scale, mainStartPos.Y.Offset + delta.Y)
     end
 end)
 
--- UI Elements
+MainFrame.InputEnded:Connect(function(input)
+    if input == activeTouch or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        mainDragging = false
+        activeTouch = nil
+    end
+end)
+
+-- Header UI Elements
 local DestroyButton = Instance.new("TextButton")
 DestroyButton.Name = "DestroyButton"
 DestroyButton.Parent = MainFrame
@@ -119,13 +127,12 @@ DestroyButton.MouseButton1Click:Connect(function()
 end)
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Name = "uselesslabelone"
 TitleLabel.Parent = MainFrame
 TitleLabel.BackgroundTransparency = 1.000
 TitleLabel.Position = UDim2.new(0.05, 0, 0.03, 0)
 TitleLabel.Size = UDim2.new(0, 140, 0, 20)
 TitleLabel.Font = Enum.Font.SourceSansBold
-TitleLabel.Text = "AutoClicker - Delta"
+TitleLabel.Text = "AutoClicker Pro - Delta"
 TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 TitleLabel.TextSize = 14.000
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -134,49 +141,65 @@ local AvatarImage = Instance.new("ImageLabel")
 local AvatarCorner = Instance.new("UICorner")
 local UserInfoLabel = Instance.new("TextLabel")
 
-AvatarImage.Name = "AvatarImage"
 AvatarImage.Parent = MainFrame
 AvatarImage.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-AvatarImage.Position = UDim2.new(0.05, 0, 0.18, 0)
-AvatarImage.Size = UDim2.new(0, 36, 0, 36)
+AvatarImage.Position = UDim2.new(0.05, 0, 0.15, 0)
+AvatarImage.Size = UDim2.new(0, 34, 0, 34)
 AvatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(targetUserId) .. "&w=150&h=150"
 AvatarCorner.CornerRadius = UDim.new(1, 0)
 AvatarCorner.Parent = AvatarImage
 
-UserInfoLabel.Name = "UserInfoLabel"
 UserInfoLabel.Parent = MainFrame
 UserInfoLabel.BackgroundTransparency = 1.000
-UserInfoLabel.Position = UDim2.new(0.22, 0, 0.18, 0)
-UserInfoLabel.Size = UDim2.new(0, 180, 0, 36)
+UserInfoLabel.Position = UDim2.new(0.20, 0, 0.15, 0)
+UserInfoLabel.Size = UDim2.new(0, 180, 0, 34)
 UserInfoLabel.Font = Enum.Font.SourceSansBold
 UserInfoLabel.Text = "angel200xp\n[elmendezz]"
 UserInfoLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
-UserInfoLabel.TextSize = 13.000
+UserInfoLabel.TextSize = 12.000
 UserInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 local Separator = Instance.new("Frame")
 local UICornerSep = Instance.new("UICorner")
-Separator.Name = "uselessframeone"
 Separator.Parent = MainFrame
 Separator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-Separator.Position = UDim2.new(0.02, 0, 0.45, 0)
-Separator.Size = UDim2.new(0, 240, 0, 3)
+Separator.Position = UDim2.new(0.02, 0, 0.33, 0)
+Separator.Size = UDim2.new(0, 250, 0, 2)
 UICornerSep.CornerRadius = UDim.new(0, 50)
 UICornerSep.Parent = Separator
 
-local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Name = "uselesslabelfour"
-StatusLabel.Parent = MainFrame
-StatusLabel.BackgroundTransparency = 1.000
-StatusLabel.Position = UDim2.new(0.05, 0, 0.82, 0)
-StatusLabel.Size = UDim2.new(0, 140, 0, 20)
-StatusLabel.Font = Enum.Font.SourceSans
-StatusLabel.Text = "Configurando puntos..."
-StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
-StatusLabel.TextSize = 13.000
-StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+-- Speed/Interval Selector UI
+local SpeedLabel = Instance.new("TextLabel")
+SpeedLabel.Parent = MainFrame
+SpeedLabel.BackgroundTransparency = 1
+SpeedLabel.Position = UDim2.new(0.05, 0, 0.36, 0)
+SpeedLabel.Size = UDim2.new(0, 110, 0, 22)
+SpeedLabel.Font = Enum.Font.SourceSansBold
+SpeedLabel.Text = "Intervalo: 0.1s"
+SpeedLabel.TextColor3 = Color3.fromRGB(220, 220, 255)
+SpeedLabel.TextSize = 13
+SpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
 
--- Touch-Safe Draggable Click Point Creator
+local SpeedButton = Instance.new("TextButton")
+local UICornerSpeed = Instance.new("UICorner")
+SpeedButton.Parent = MainFrame
+SpeedButton.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+SpeedButton.Position = UDim2.new(0.52, 0, 0.36, 0)
+SpeedButton.Size = UDim2.new(0, 110, 0, 22)
+SpeedButton.Font = Enum.Font.SourceSansBold
+SpeedButton.Text = "Cambiar Tiempo"
+SpeedButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+SpeedButton.TextSize = 11
+UICornerSpeed.CornerRadius = UDim.new(0, 4)
+UICornerSpeed.Parent = SpeedButton
+
+SpeedButton.MouseButton1Click:Connect(function()
+    currentIntervalIdx = (currentIntervalIdx % #availableIntervals) + 1
+    clickInterval = availableIntervals[currentIntervalIdx]
+    SpeedLabel.Text = "Intervalo: " .. tostring(clickInterval) .. "s"
+end)
+
+-- Point Creation Mechanism without locking controls
 local function createPoint(position)
     local pointNumber = #clickPoints + 1
     if pointNumber > 10 then return end
@@ -187,8 +210,8 @@ local function createPoint(position)
 
     PointFrame.Name = "ClickPoint_" .. pointNumber
     PointFrame.Parent = ScreenGui
-    PointFrame.Size = UDim2.new(0, 36, 0, 36)
-    PointFrame.Position = position or UDim2.new(0.5, -18, 0.5, -18)
+    PointFrame.Size = UDim2.new(0, 34, 0, 34)
+    PointFrame.Position = position or UDim2.new(0.5, -17, 0.4, -17)
     PointFrame.BackgroundColor3 = Color3.fromRGB(0, 255, 127)
     PointFrame.Active = true
     PointFrame.ZIndex = 100
@@ -202,53 +225,50 @@ local function createPoint(position)
     PointLabel.Font = Enum.Font.SourceSansBold
     PointLabel.Text = tostring(pointNumber)
     PointLabel.TextColor3 = Color3.fromRGB(20, 20, 20)
-    PointLabel.TextSize = 18
+    PointLabel.TextSize = 16
 
-    -- Camera-Safe Drag Mechanism
-    local dragging = false
-    local touchObject = nil
-    local dragStart, startPos
+    -- Independent isolated point dragging
+    local pointDragging = false
+    local pointDragStart, pointStartPos, pTouch
 
     PointFrame.InputBegan:Connect(function(input)
         if not getgenv().EditingPositions then return end
-        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            touchObject = input
-            dragStart = input.Position
-            startPos = PointFrame.Position
-
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                    touchObject = nil
-                end
-            end)
+        if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) and not pointDragging then
+            pointDragging = true
+            pTouch = input
+            pointDragStart = input.Position
+            pointStartPos = PointFrame.Position
         end
     end)
 
     PointFrame.InputChanged:Connect(function(input)
-        if not getgenv().EditingPositions then return end
-        if input == touchObject and dragging then
-            local delta = input.Position - dragStart
-            PointFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        if pointDragging and getgenv().EditingPositions and (input == pTouch or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+            local delta = input.Position - pointDragStart
+            PointFrame.Position = UDim2.new(pointStartPos.X.Scale, pointStartPos.X.Offset + delta.X, pointStartPos.Y.Scale, pointStartPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    PointFrame.InputEnded:Connect(function(input)
+        if input == pTouch or input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            pointDragging = false
+            pTouch = nil
         end
     end)
 
     table.insert(clickPoints, PointFrame)
 end
 
--- Add / Clear Buttons
+-- Control Buttons
 local AddPointButton = Instance.new("TextButton")
 local UICornerAdd = Instance.new("UICorner")
-AddPointButton.Name = "AddPointButton"
 AddPointButton.Parent = MainFrame
 AddPointButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-AddPointButton.Position = UDim2.new(0.05, 0, 0.50, 0)
+AddPointButton.Position = UDim2.new(0.05, 0, 0.49, 0)
 AddPointButton.Size = UDim2.new(0, 110, 0, 24)
 AddPointButton.Font = Enum.Font.SourceSansBold
 AddPointButton.Text = "+ Añadir Punto"
 AddPointButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-AddPointButton.TextSize = 13.000
+AddPointButton.TextSize = 12
 UICornerAdd.CornerRadius = UDim.new(0, 4)
 UICornerAdd.Parent = AddPointButton
 
@@ -260,15 +280,14 @@ end)
 
 local ClearPointsButton = Instance.new("TextButton")
 local UICornerClear = Instance.new("UICorner")
-ClearPointsButton.Name = "ClearPointsButton"
 ClearPointsButton.Parent = MainFrame
 ClearPointsButton.BackgroundColor3 = Color3.fromRGB(70, 40, 40)
-ClearPointsButton.Position = UDim2.new(0.52, 0, 0.50, 0)
+ClearPointsButton.Position = UDim2.new(0.52, 0, 0.49, 0)
 ClearPointsButton.Size = UDim2.new(0, 110, 0, 24)
 ClearPointsButton.Font = Enum.Font.SourceSansBold
 ClearPointsButton.Text = "Limpiar"
 ClearPointsButton.TextColor3 = Color3.fromRGB(255, 180, 180)
-ClearPointsButton.TextSize = 13.000
+ClearPointsButton.TextSize = 12
 UICornerClear.CornerRadius = UDim.new(0, 4)
 UICornerClear.Parent = ClearPointsButton
 
@@ -281,42 +300,34 @@ ClearPointsButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Main Toggle Button (LISTO / PARAR)
+-- Status Display
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Parent = MainFrame
+StatusLabel.BackgroundTransparency = 1.000
+StatusLabel.Position = UDim2.new(0.05, 0, 0.86, 0)
+StatusLabel.Size = UDim2.new(0, 230, 0, 20)
+StatusLabel.Font = Enum.Font.SourceSans
+StatusLabel.Text = "Configurando puntos..."
+StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+StatusLabel.TextSize = 12
+
+-- Toggle Button (INICIAR / PARAR)
 local ReadyButton = Instance.new("TextButton")
 local UICornerReady = Instance.new("UICorner")
-ReadyButton.Name = "ToggleButton"
 ReadyButton.Parent = MainFrame
 ReadyButton.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
-ReadyButton.Position = UDim2.new(0.05, 0, 0.65, 0)
-ReadyButton.Size = UDim2.new(0, 230, 0, 28)
+ReadyButton.Position = UDim2.new(0.05, 0, 0.63, 0)
+ReadyButton.Size = UDim2.new(0, 230, 0, 30)
 ReadyButton.Font = Enum.Font.SourceSansBold
-ReadyButton.Text = "LISTO (Iniciar)"
+ReadyButton.Text = "INICIAR AUTOCLICK"
 ReadyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ReadyButton.TextSize = 14.000
+ReadyButton.TextSize = 14
 UICornerReady.CornerRadius = UDim.new(0, 4)
 UICornerReady.Parent = ReadyButton
 
--- Center Touch Button (Ignora el resto)
-local CenterClickButton = Instance.new("TextButton")
-local UICornerCenter = Instance.new("UICorner")
-CenterClickButton.Name = "CenterClickButton"
-CenterClickButton.Parent = MainFrame
-CenterClickButton.BackgroundColor3 = Color3.fromRGB(120, 50, 150)
-CenterClickButton.Position = UDim2.new(0.65, 0, 0.18, 0)
-CenterClickButton.Size = UDim2.new(0, 80, 0, 36)
-CenterClickButton.Font = Enum.Font.SourceSansBold
-CenterClickButton.Text = "AUTO\nCENTRO"
-CenterClickButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CenterClickButton.TextSize = 11.000
-
-UICornerCenter.CornerRadius = UDim.new(0, 4)
-UICornerCenter.Parent = CenterClickButton
-
-local isCenterMode = false
-
 ReadyButton.MouseButton1Click:Connect(function()
-    if #clickPoints == 0 and not isCenterMode then
-        StatusLabel.Text = "¡Añade puntos!"
+    if #clickPoints == 0 then
+        StatusLabel.Text = "¡Añade al menos 1 punto!"
         StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
         task.wait(1)
         StatusLabel.Text = "Configurando puntos..."
@@ -327,30 +338,29 @@ ReadyButton.MouseButton1Click:Connect(function()
     if not getgenv().ClickingActive then
         getgenv().ClickingActive = true
         getgenv().EditingPositions = false
-        ReadyButton.Text = "PARAR"
+        ReadyButton.Text = "DETENER"
         ReadyButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-        StatusLabel.Text = "AutoClick Activo"
+        StatusLabel.Text = "AutoClicker Ejecutándose..."
         StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 127)
         AddPointButton.Visible = false
         ClearPointsButton.Visible = false
-        CenterClickButton.Visible = false
+        SpeedButton.Visible = false
 
         for _, p in pairs(clickPoints) do
-            p.BackgroundTransparency = 0.6
-            p.TextLabel.TextTransparency = 0.6
+            p.BackgroundTransparency = 0.5
+            p.TextLabel.TextTransparency = 0.5
             p.Active = false
         end
     else
         getgenv().ClickingActive = false
         getgenv().EditingPositions = true
-        ReadyButton.Text = "LISTO (Iniciar)"
+        ReadyButton.Text = "INICIAR AUTOCLICK"
         ReadyButton.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
         StatusLabel.Text = "Configurando puntos..."
         StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
         AddPointButton.Visible = true
         ClearPointsButton.Visible = true
-        CenterClickButton.Visible = true
-        isCenterMode = false
+        SpeedButton.Visible = true
 
         for _, p in pairs(clickPoints) do
             p.BackgroundTransparency = 0
@@ -360,23 +370,7 @@ ReadyButton.MouseButton1Click:Connect(function()
     end
 end)
 
-CenterClickButton.MouseButton1Click:Connect(function()
-    if getgenv().ClickingActive then return end
-
-    for _, p in pairs(clickPoints) do
-        p:Destroy()
-    end
-    clickPoints = {}
-
-    local viewportSize = workspace.CurrentCamera.ViewportSize
-    local centerPos = UDim2.new(0, (viewportSize.X / 2) - 18, 0, (viewportSize.Y / 2) - 18)
-    createPoint(centerPos)
-
-    isCenterMode = true
-    ReadyButton.MouseButton1Click:Fire()
-end)
-
--- Direct Game-World Touch Execution Engine
+-- Click Engine in 3D Game World
 task.spawn(function()
     while getgenv().AutoClickerExecuted do
         if getgenv().ClickingActive and #clickPoints > 0 then
@@ -387,15 +381,12 @@ task.spawn(function()
                 local y = pointFrame.AbsolutePosition.Y + (pointFrame.AbsoluteSize.Y / 2)
 
                 pcall(function()
-                    -- Bypass UI click interceptors by injecting physical screen touch
-                    VirtualInputManager:SendTouchEvent(1001, 0, x, y)
-                    task.wait(0.01)
-                    VirtualInputManager:SendTouchEvent(1001, 2, x, y)
-                    
-                    -- Backup VirtualUser click inside game canvas
-                    VirtualUser:CaptureController()
-                    VirtualUser:Button1Down(Vector2.new(x, y))
-                    VirtualUser:Button1Up(Vector2.new(x, y))
+                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+                    task.wait(0.005)
+                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+                    VirtualInputManager:SendTouchEvent(2001, 0, x, y)
+                    task.wait(0.005)
+                    VirtualInputManager:SendTouchEvent(2001, 2, x, y)
                 end)
             end
             task.wait(clickInterval)
@@ -405,4 +396,5 @@ task.spawn(function()
     end
 end)
 
-createPoint(UDim2.new(0.5, -18, 0.4, 0))
+-- Spawn initial point
+createPoint(UDim2.new(0.5, -17, 0.4, 0))
