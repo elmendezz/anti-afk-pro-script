@@ -1,0 +1,171 @@
+-- Version: 1
+-- Changelog:
+-- - Versión inicial del script de GUI para eliminar jugadores con actualización de lista cada 5 segundos y avatares de perfil.
+
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Limpiar GUI anterior si ya existe
+if CoreGui:FindFirstChild("KillExecutorGui") then
+    CoreGui.KillExecutorGui:Destroy()
+end
+
+-- Creación de la Interfaz Gráfica (GUI)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "KillExecutorGui"
+ScreenGui.Parent = CoreGui
+ScreenGui.ResetOnSpawn = false
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
+MainFrame.Size = UDim2.new(0, 300, 0, 400)
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Parent = MainFrame
+Title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+Title.BorderSizePixel = 0
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Font = Enum.Font.SourceSansBold
+Title.Text = "Kill Executor - Players"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 18
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 8)
+TitleCorner.Parent = Title
+
+local ScrollingFrame = Instance.new("ScrollingFrame")
+ScrollingFrame.Name = "ScrollingFrame"
+ScrollingFrame.Parent = MainFrame
+ScrollingFrame.BackgroundTransparency = 1
+ScrollingFrame.Position = UDim2.new(0, 10, 0, 50)
+ScrollingFrame.Size = UDim2.new(1, -20, 1, -120)
+ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollingFrame.ScrollBarThickness = 6
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = ScrollingFrame
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 5)
+
+local KillButton = Instance.new("TextButton")
+KillButton.Name = "KillButton"
+KillButton.Parent = MainFrame
+KillButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+KillButton.BorderSizePixel = 0
+KillButton.Position = UDim2.new(0, 10, 1, -60)
+KillButton.Size = UDim2.new(1, -20, 0, 45)
+KillButton.Font = Enum.Font.SourceSansBold
+KillButton.Text = "MATAR SELECCIONADO"
+KillButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+KillButton.TextSize = 16
+
+local ButtonCorner = Instance.new("UICorner")
+ButtonCorner.CornerRadius = UDim.new(0, 6)
+ButtonCorner.Parent = KillButton
+
+local selectedPlayer = nil
+
+-- Función para obtener la miniatura del jugador
+local function getPlayerThumbnail(userId)
+    local content, isReady = Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size42x42)
+    return content
+end
+
+-- Función para actualizar la lista de jugadores
+local function updatePlayerList()
+    -- Guardar la selección actual si sigue en el juego
+    for _, child in ipairs(ScrollingFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+
+    local playersList = Players:GetPlayers()
+    for _, player in ipairs(playersList) do
+        if player ~= LocalPlayer then
+            local PlayerItem = Instance.new("TextButton")
+            PlayerItem.Name = player.Name
+            PlayerItem.Parent = ScrollingFrame
+            PlayerItem.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+            PlayerItem.BorderSizePixel = 0
+            PlayerItem.Size = UDim2.new(1, 0, 0, 40)
+            PlayerItem.AutoButtonColor = false
+            PlayerItem.Text = "  " .. player.Name
+            PlayerItem.TextColor3 = Color3.fromRGB(255, 255, 255)
+            PlayerItem.TextSize = 14
+            PlayerItem.Font = Enum.Font.SourceSans
+            PlayerItem.TextXAlignment = Enum.TextXAlignment.Left
+
+            local ItemCorner = Instance.new("UICorner")
+            ItemCorner.CornerRadius = UDim.new(0, 4)
+            ItemCorner.Parent = PlayerItem
+
+            local AvatarImage = Instance.new("ImageLabel")
+            AvatarImage.Parent = PlayerItem
+            AvatarImage.BackgroundTransparency = 1
+            AvatarImage.Position = UDim2.new(0, 5, 0.5, -15)
+            AvatarImage.Size = UDim2.new(0, 30, 0, 30)
+            
+            -- Cargar imagen de perfil de forma segura
+            pcall(function()
+                AvatarImage.Image = getPlayerThumbnail(player.UserId)
+            end)
+
+            -- Ajustar texto para que no se encime con la foto
+            PlayerItem.Text = "        " .. player.Name
+
+            -- Manejar selección
+            PlayerItem.MouseButton1Click:Connect(function()
+                for _, btn in ipairs(ScrollingFrame:GetChildren()) do
+                    if btn:IsA("TextButton") then
+                        btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+                    end
+                end
+                PlayerItem.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
+                selectedPlayer = player
+            end)
+        end
+    end
+
+    ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y)
+end
+
+-- Acción del botón de matar
+KillButton.MouseButton1Click:Connect(function()
+    if selectedPlayer and selectedPlayer.Character then
+        local character = selectedPlayer.Character
+        if character:FindFirstChild("Humanoid") then
+            -- Romper el cuello / vaciar la salud o destruir el HumanoidRootPart para matarlo instantáneamente
+            pcall(function()
+                character.Humanoid.Health = 0
+            end)
+            pcall(function()
+                character.HumanoidRootPart:Destroy()
+            end)
+        end
+    end
+end)
+
+-- Bucle de actualización automática cada 5 segundos
+task.spawn(function()
+    while true do
+        pcall(updatePlayerList)
+        task.wait(5)
+    end
+end)
