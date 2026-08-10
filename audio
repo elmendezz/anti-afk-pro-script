@@ -1,0 +1,210 @@
+-- Version: 2
+-- Changelog:
+-- - Versión 2: Integración de una interfaz gráfica (GUI) flotante para listar, buscar, reproducir, detener, poner en bucle y ajustar el volumen de los audios existentes en la experiencia.
+-- - Se mantiene el sistema anterior de búsqueda y se añade la compatibilidad visual interactiva.
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local SoundService = game:GetService("SoundService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Destruir GUI anterior si ya existe para evitar duplicados
+if playerGui:FindFirstChild("AudioScannerGui") then
+    playerGui.AudioScannerGui:Destroy()
+end
+
+-- Crear la Interfaz Gráfica (GUI)
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AudioScannerGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 450, 0, 350)
+mainFrame.Position = UDim2.new(0.5, -225, 0.5, -175)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = mainFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 40)
+titleLabel.BackgroundColor3 = Color3.fromRGB(45, 45, 52)
+titleLabel.Text = "  Explorador de Audios - Exp Actual"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextSize = 16
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.Parent = titleLabel
+
+-- Botón de cerrar
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 30, 0, 30)
+closeButton.Position = UDim2.new(1, -35, 0, 5)
+closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeButton.Text = "X"
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextSize = 14
+closeButton.Parent = mainFrame
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.Parent = closeButton
+
+closeButton.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+-- Contenedor de la lista
+local scrollingFrame = Instance.new("ScrollingFrame")
+scrollingFrame.Size = UDim2.new(1, -20, 1, -110)
+scrollingFrame.Position = UDim2.new(0, 10, 0, 50)
+scrollingFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+scrollingFrame.BorderSizePixel = 0
+scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollingFrame.Parent = mainFrame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 5)
+listLayout.Parent = scrollingFrame
+
+-- Botón de Escanear / Actualizar
+local scanButton = Instance.new("TextButton")
+scanButton.Size = UDim2.new(1, -20, 0, 35)
+scanButton.Position = UDim2.new(0, 10, 1, -45)
+scanButton.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+scanButton.Text = "Escanear / Actualizar Lista"
+scanButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+scanButton.Font = Enum.Font.GothamBold
+scanButton.TextSize = 14
+scanButton.Parent = mainFrame
+
+local scanCorner = Instance.new("UICorner")
+scanCorner.CornerRadius = UDim.new(0, 6)
+scanCorner.Parent = scanButton
+
+-- Función para limpiar lista visual
+local function clearList()
+    for _, child in ipairs(scrollingFrame:GetChildren()) do
+        if child:IsA("Frame") then
+            child:Destroy()
+        end
+    end
+end
+
+-- Función para escanear y rellenar la GUI
+local function scanAndPopulate()
+    clearList()
+    local count = 0
+    
+    for _, descendant in ipairs(game:GetDescendants()) do
+        if descendant:IsA("Sound") then
+            count = count + 1
+            
+            -- Crear tarjeta para cada sonido
+            local itemFrame = Instance.new("Frame")
+            itemFrame.Size = UDim2.new(1, -10, 0, 40)
+            itemFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 48)
+            itemFrame.Parent = scrollingFrame
+            
+            local itemCorner = Instance.new("UICorner")
+            itemCorner.CornerRadius = UDim.new(0, 4)
+            itemCorner.Parent = itemFrame
+            
+            local nameLabel = Instance.new("TextLabel")
+            nameLabel.Size = UDim2.new(0.4, 0, 1, 0)
+            nameLabel.Position = UDim2.new(0, 8, 0, 0)
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Text = descendant.Name
+            nameLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+            nameLabel.TextSize = 12
+            nameLabel.Font = Enum.Font.Gotham
+            nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+            nameLabel.Parent = itemFrame
+            
+            -- Botón Play
+            local playBtn = Instance.new("TextButton")
+            playBtn.Size = UDim2.new(0, 50, 0, 26)
+            playBtn.Position = UDim2.new(0.42, 0, 0.5, -13)
+            playBtn.BackgroundColor3 = Color3.fromRGB(46, 139, 87)
+            playBtn.Text = "Play"
+            playBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            playBtn.TextSize = 11
+            playBtn.Font = Enum.Font.GothamBold
+            playBtn.Parent = itemFrame
+            
+            local pc = Instance.new("UICorner")
+            pc.CornerRadius = UDim.new(0, 4)
+            pc.Parent = playBtn
+            
+            -- Botón Stop
+            local stopBtn = Instance.new("TextButton")
+            stopBtn.Size = UDim2.new(0, 50, 0, 26)
+            stopBtn.Position = UDim2.new(0.55, 0, 0.5, -13)
+            stopBtn.BackgroundColor3 = Color3.fromRGB(178, 34, 34)
+            stopBtn.Text = "Stop"
+            stopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            stopBtn.TextSize = 11
+            stopBtn.Font = Enum.Font.GothamBold
+            stopBtn.Parent = itemFrame
+            
+            local sc = Instance.new("UICorner")
+            sc.CornerRadius = UDim.new(0, 4)
+            sc.Parent = stopBtn
+            
+            -- Botón Loop (Alternar Bucle)
+            local loopBtn = Instance.new("TextButton")
+            loopBtn.Size = UDim2.new(0, 50, 0, 26)
+            loopBtn.Position = UDim2.new(0.68, 0, 0.5, -13)
+            loopBtn.BackgroundColor3 = descendant.Looped and Color3.fromRGB(70, 130, 180) or Color3.fromRGB(80, 80, 90)
+            loopBtn.Text = descendant.Looped and "Loop:ON" or "Loop:OFF"
+            loopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            loopBtn.TextSize = 10
+            loopBtn.Font = Enum.Font.GothamBold
+            loopBtn.Parent = itemFrame
+            
+            local lc = Instance.new("UICorner")
+            lc.CornerRadius = UDim.new(0, 4)
+            lc.Parent = loopBtn
+            
+            -- Botón Volumen Alto/Bajo o Clonar reproducción local
+            playBtn.MouseButton1Click:Connect(function()
+                pcall(function()
+                    descendant:Play()
+                end)
+            end)
+            
+            stopBtn.MouseButton1Click:Connect(function()
+                pcall(function()
+                    descendant:Stop()
+                end)
+            end)
+            
+            loopBtn.MouseButton1Click:Connect(function()
+                descendant.Looped = not descendant.Looped
+                loopBtn.Text = descendant.Looped and "Loop:ON" or "Loop:OFF"
+                loopBtn.BackgroundColor3 = descendant.Looped and Color3.fromRGB(70, 130, 180) or Color3.fromRGB(80, 80, 90)
+            end)
+        end
+    end
+    
+    scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, count * 45)
+end
+
+scanButton.MouseButton1Click:Connect(scanAndPopulate)
+
+-- Escaneo automático inicial al abrir la GUI
+scanAndPopulate()
