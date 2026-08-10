@@ -17,8 +17,10 @@
 -- [+] Ajuste de dirección de vuelo para evitar inversiones en el sentido del stick.
 -- [+] Implementación de anclaje de posición estricto (Modo Ladrillo) al dejar de mover el joystick, anulando cualquier fuerza física externa o movimiento fantasma en los juegos.
 -- [+] Rediseño del modo minimizado para mostrar única y exclusivamente los 3 botones principales (Volar, Boost y Noclip) en formato compacto.
+-- [Version: 3.1 Fix]
+-- [+] Corrección de la inversión del eje Z para movimiento directo (Stick adelante = mono adelante).
 
-local Version = 3
+local Version = "3.1"
 
 -- [ DEPENDENCIAS Y SERVICIOS ] --
 local Players = game:GetService("Players")
@@ -118,7 +120,7 @@ TitleLabel.BackgroundTransparency = 1
 TitleLabel.Position = UDim2.new(0, 15, 0, 0)
 TitleLabel.Size = UDim2.new(0.6, 0, 1, 0)
 TitleLabel.Font = Enum.Font.GothamBold
-TitleLabel.Text = "MendezFlyTool (v" .. Version .. ")"
+TitleLabel.Text = "MendezFlyTool (v" .. tostring(Version) .. ")"
 TitleLabel.TextColor3 = Color3.fromRGB(138, 180, 248) -- Gemini Blue
 TitleLabel.TextSize = 15
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -432,7 +434,8 @@ task.spawn(function()
             
             if moveVector.Magnitude > 0 then
                 lockedPosition = nil -- Desbloquear al usar el stick
-                local velocityDir = (camCFrame.RightVector * moveVector.X) + (camCFrame.LookVector * moveVector.Z)
+                -- (-moveVector.Z) invierte el eje vertical para que Stick Adelante sea siempre Mono Adelante
+                local velocityDir = (camCFrame.RightVector * moveVector.X) + (camCFrame.LookVector * (-moveVector.Z))
                 BodyVelocity.Velocity = velocityDir * speed
                 HRP.AssemblyLinearVelocity = Vector3.zero
             else
