@@ -1,11 +1,13 @@
 -- [[ CHANGELOG ]]
--- [Version: 3.3 - Fix Update, Refresh Cache & Drag Lock]
--- [+] Corrección de movimiento de ventana: Se bloquea la rotación de cámara al arrastrar la interfaz.
--- [+] Botón de Refresh (🔄) añadido a la barra de título para recargar el script al instante.
--- [+] Bypass de caché de GitHub mediante timestamps (?t=time) en game:HttpGet.
--- [+] Persistencia de configuración: Conserva los estados (Volar, Boost, Noclip, Anti-AFK) tras actualizar o hacer refresh.
+-- [Version: 3.4 - Visual Overhaul, Ultra-Minimizar, Camera Fix]
+-- [*] Arreglo crítico de la cámara que se quedaba estática.
+-- [+] Animaciones TweenService (Hover, entrada, salida, brillo).
+-- [+] Fondo animado giratorio (Gradient) y borde estilo Neon (Glow).
+-- [+] Vibración "brr-brr-brr" al abrir el panel o restaurarlo.
+-- [+] Botón [--] para Ultra Minimizar a un botón flotante redondo.
+-- [+] Botón exclusivo para "Forzar Actualización".
 
-local Version = "3.3"
+local Version = "3.4"
 
 -- [ DEPENDENCIAS Y SERVICIOS ] --
 local Players = game:GetService("Players")
@@ -18,6 +20,7 @@ local HapticService = game:GetService("HapticService")
 local TeleportService = game:GetService("TeleportService")
 local StarterGui = game:GetService("StarterGui")
 local GuiService = game:GetService("GuiService")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
@@ -37,27 +40,39 @@ if getgenv().MendezFlyTool_Loaded then
 end
 getgenv().MendezFlyTool_Loaded = true
 
--- [ RECUPERACIÓN O INICIALIZACIÓN DE ESTADOS ] --
-local SavedState = getgenv().MendezFlyTool_SavedState or {}
+-- [ VIBRACIÓN "BRR-BRR-BRR" ] --
+local function BrrBrrBrr()
+    task.spawn(function()
+        pcall(function()
+            if UserInputService:GetGamepadConnected(Enum.UserInputType.Gamepad1) or UserInputService.TouchEnabled then
+                for i = 1, 3 do
+                    HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Large, 1)
+                    task.wait(0.1)
+                    HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Large, 0)
+                    task.wait(0.05)
+                end
+            end
+        end)
+    end)
+end
 
+-- Ejecutamos la vibración al iniciar el script
+BrrBrrBrr()
+
+-- [ ESTADOS Y CACHÉ ] --
+local SavedState = getgenv().MendezFlyTool_SavedState or {}
 local States = {
     Flying = SavedState.Flying or false,
     FlySpeed = SavedState.FlySpeed or 0,
     Noclip = SavedState.Noclip or false,
     AntiAFK = SavedState.AntiAFK or false,
     StartTime = SavedState.StartTime or os.time(),
-    Minimized = SavedState.Minimized or false
+    Minimized = SavedState.Minimized or false,
+    UltraMinimized = false
 }
 
-local Speeds = {
-    [0] = 50,
-    [1] = 100,
-    [2] = 150,
-    [3] = 250,
-    [4] = 400
-}
+local Speeds = { [0] = 50, [1] = 100, [2] = 150, [3] = 250, [4] = 400 }
 
--- Guardar estados en el entorno global para sobrevivir a un reload/update
 local function SaveCurrentState()
     getgenv().MendezFlyTool_SavedState = {
         Flying = States.Flying,
@@ -69,75 +84,64 @@ local function SaveCurrentState()
     }
 end
 
--- [ ID DE ANIMACIONES DE VUELO DE ROBLOX ] --
-local ANIM_IDS = {
-    FlyIdle = "rbxassetid://507771019",
-    FlyMove = "rbxassetid://507772104"
-}
-
-local currentFlyTrack = nil
-local currentIdleTrack = nil
-
-local function StopFlyAnimations()
-    if currentFlyTrack then
-        currentFlyTrack:Stop(0.2)
-        currentFlyTrack:Destroy()
-        currentFlyTrack = nil
-    end
-    if currentIdleTrack then
-        currentIdleTrack:Stop(0.2)
-        currentIdleTrack:Destroy()
-        currentIdleTrack = nil
-    end
-end
-
-local function SetupFlyAnimations()
-    StopFlyAnimations()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    
-    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
-
-    local idleAnim = Instance.new("Animation")
-    idleAnim.AnimationId = ANIM_IDS.FlyIdle
-
-    local moveAnim = Instance.new("Animation")
-    moveAnim.AnimationId = ANIM_IDS.FlyMove
-
-    pcall(function()
-        currentIdleTrack = animator:LoadAnimation(idleAnim)
-        currentIdleTrack.Priority = Enum.AnimationPriority.Action
-        currentIdleTrack.Looped = true
-
-        currentFlyTrack = animator:LoadAnimation(moveAnim)
-        currentFlyTrack.Priority = Enum.AnimationPriority.Action
-        currentFlyTrack.Looped = true
-    end)
-end
-
--- [ CREACIÓN DE LA INTERFAZ (Gemini Dark) ] --
+-- [ CREACIÓN DE LA INTERFAZ ] --
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "MendezFlyTool_UI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-local success, err = pcall(function()
-    ScreenGui.Parent = CoreGui
-end)
-if not success then
-    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-end
+pcall(function() ScreenGui.Parent = CoreGui end)
+if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+-- Botón Flotante Redondo (Ultra Minimized)
+local RoundBtn = Instance.new("TextButton")
+RoundBtn.Name = "RoundOpenBtn"
+RoundBtn.Parent = ScreenGui
+RoundBtn.Size = UDim2.new(0, 0, 0, 0) -- Inicia invisible (animado)
+RoundBtn.Position = UDim2.new(0.5, -25, 0.1, 0)
+RoundBtn.BackgroundColor3 = Color3.fromRGB(30, 31, 34)
+RoundBtn.Text = "MF"
+RoundBtn.TextColor3 = Color3.fromRGB(138, 180, 248)
+RoundBtn.Font = Enum.Font.GothamBold
+RoundBtn.TextSize = 18
+RoundBtn.Visible = false
+RoundBtn.ClipsDescendants = true
+RoundBtn.Active = true
+
+local RoundCorner = Instance.new("UICorner")
+RoundCorner.CornerRadius = UDim.new(1, 0) -- Hace el botón totalmente redondo
+RoundCorner.Parent = RoundBtn
+
+local RoundStroke = Instance.new("UIStroke")
+RoundStroke.Color = Color3.fromRGB(138, 180, 248)
+RoundStroke.Thickness = 2
+RoundStroke.Parent = RoundBtn
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(19, 19, 20)
-MainFrame.Position = UDim2.new(0.5, -150, 0.5, -150)
-MainFrame.Size = UDim2.new(0, 300, 0, 300)
+MainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+MainFrame.Position = UDim2.new(0.5, -165, 0.5, -175)
+MainFrame.Size = UDim2.new(0, 330, 0, 350)
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
+MainFrame.Active = true
+
+-- Gradiente animado para el fondo
+local BgGradient = Instance.new("UIGradient")
+BgGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(19, 19, 20)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(35, 25, 40)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(19, 19, 20))
+})
+BgGradient.Parent = MainFrame
+
+-- Glow (Borde Brillante)
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Color3.fromRGB(138, 180, 248)
+MainStroke.Thickness = 2
+MainStroke.Transparency = 0.2
+MainStroke.Parent = MainFrame
 
 local MainUICorner = Instance.new("UICorner")
 MainUICorner.CornerRadius = UDim.new(0, 12)
@@ -149,17 +153,11 @@ TitleBar.Parent = MainFrame
 TitleBar.BackgroundColor3 = Color3.fromRGB(30, 31, 34)
 TitleBar.Size = UDim2.new(1, 0, 0, 35)
 TitleBar.BorderSizePixel = 0
+TitleBar.Active = true
 
 local TitleUICorner = Instance.new("UICorner")
 TitleUICorner.CornerRadius = UDim.new(0, 12)
 TitleUICorner.Parent = TitleBar
-
-local TitleFix = Instance.new("Frame")
-TitleFix.Parent = TitleBar
-TitleFix.BackgroundColor3 = Color3.fromRGB(30, 31, 34)
-TitleFix.BorderSizePixel = 0
-TitleFix.Position = UDim2.new(0, 0, 0.5, 0)
-TitleFix.Size = UDim2.new(1, 0, 0.5, 0)
 
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Parent = TitleBar
@@ -172,7 +170,17 @@ TitleLabel.TextColor3 = Color3.fromRGB(138, 180, 248)
 TitleLabel.TextSize = 14
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
--- Botón Refresh (🔄)
+-- Botones de Ventana
+local UltraMinBtn = Instance.new("TextButton")
+UltraMinBtn.Parent = TitleBar
+UltraMinBtn.BackgroundTransparency = 1
+UltraMinBtn.Position = UDim2.new(1, -125, 0, 0)
+UltraMinBtn.Size = UDim2.new(0, 30, 1, 0)
+UltraMinBtn.Font = Enum.Font.GothamBold
+UltraMinBtn.Text = "[--]"
+UltraMinBtn.TextColor3 = Color3.fromRGB(138, 180, 248)
+UltraMinBtn.TextSize = 14
+
 local RefreshBtn = Instance.new("TextButton")
 RefreshBtn.Parent = TitleBar
 RefreshBtn.BackgroundTransparency = 1
@@ -203,7 +211,6 @@ CloseBtn.Text = "X"
 CloseBtn.TextColor3 = Color3.fromRGB(255, 76, 76)
 CloseBtn.TextSize = 16
 
--- Contenedor General
 local Content = Instance.new("Frame")
 Content.Name = "Content"
 Content.Parent = MainFrame
@@ -211,13 +218,25 @@ Content.BackgroundTransparency = 1
 Content.Position = UDim2.new(0, 0, 0, 35)
 Content.Size = UDim2.new(1, 0, 1, -35)
 
+-- [ ANIMACIÓN HOVER PARA BOTONES ] --
+local function ApplyHoverAnim(btn, defaultColor)
+    local h, s, v = Color3.toHSV(defaultColor)
+    local hoverColor = Color3.fromHSV(h, s, math.clamp(v + 0.2, 0, 1))
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = hoverColor}):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = defaultColor}):Play()
+    end)
+end
+
 local function CreateButton(name, text, pos, color)
     local btn = Instance.new("TextButton")
     btn.Name = name
     btn.Parent = Content
     btn.BackgroundColor3 = color
     btn.Position = pos
-    btn.Size = UDim2.new(0, 120, 0, 30)
+    btn.Size = UDim2.new(0, 135, 0, 32)
     btn.Font = Enum.Font.GothamSemibold
     btn.Text = text
     btn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -226,42 +245,39 @@ local function CreateButton(name, text, pos, color)
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 8)
     corner.Parent = btn
+    
+    ApplyHoverAnim(btn, color)
     return btn
 end
 
-local VolarBtn = CreateButton("VolarBtn", "Volar: OFF", UDim2.new(0, 20, 0, 12), Color3.fromRGB(255, 76, 76))
-local BoostBtn = CreateButton("BoostBtn", "Boost $: OFF", UDim2.new(0, 160, 0, 12), Color3.fromRGB(60, 64, 67))
-local NoclipBtn = CreateButton("NoclipBtn", "Noclip: OFF", UDim2.new(0, 20, 0, 52), Color3.fromRGB(60, 64, 67))
-local AntiAFKBtn = CreateButton("AntiAFKBtn", "Anti-AFK: OFF", UDim2.new(0, 160, 0, 52), Color3.fromRGB(60, 64, 67))
+local VolarBtn = CreateButton("VolarBtn", "Volar: OFF", UDim2.new(0, 20, 0, 15), Color3.fromRGB(255, 76, 76))
+local BoostBtn = CreateButton("BoostBtn", "Boost $: OFF", UDim2.new(0, 175, 0, 15), Color3.fromRGB(60, 64, 67))
+local NoclipBtn = CreateButton("NoclipBtn", "Noclip: OFF", UDim2.new(0, 20, 0, 60), Color3.fromRGB(60, 64, 67))
+local AntiAFKBtn = CreateButton("AntiAFKBtn", "Anti-AFK: OFF", UDim2.new(0, 175, 0, 60), Color3.fromRGB(60, 64, 67))
 
--- Botón de Actualización (Updater)
-local UpdateBtn = Instance.new("TextButton")
-UpdateBtn.Name = "UpdateBtn"
-UpdateBtn.Parent = Content
-UpdateBtn.BackgroundColor3 = Color3.fromRGB(40, 42, 46)
-UpdateBtn.Position = UDim2.new(0, 20, 0, 92)
-UpdateBtn.Size = UDim2.new(0, 260, 0, 28)
-UpdateBtn.Font = Enum.Font.GothamSemibold
-UpdateBtn.Text = "Actualizar desde GitHub"
-UpdateBtn.TextColor3 = Color3.fromRGB(138, 180, 248)
-UpdateBtn.TextSize = 13
-local UpdateCorner = Instance.new("UICorner")
-UpdateCorner.CornerRadius = UDim.new(0, 8)
-UpdateCorner.Parent = UpdateBtn
+-- Botón Forzar Update Exclusivo
+local ForceUpdateBtn = Instance.new("TextButton")
+ForceUpdateBtn.Parent = Content
+ForceUpdateBtn.BackgroundColor3 = Color3.fromRGB(155, 89, 182)
+ForceUpdateBtn.Position = UDim2.new(0, 20, 0, 105)
+ForceUpdateBtn.Size = UDim2.new(0, 290, 0, 28)
+ForceUpdateBtn.Font = Enum.Font.GothamBold
+ForceUpdateBtn.Text = "⚡ Forzar Actualización"
+ForceUpdateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ForceUpdateBtn.TextSize = 13
+Instance.new("UICorner", ForceUpdateBtn).CornerRadius = UDim.new(0, 8)
+ApplyHoverAnim(ForceUpdateBtn, Color3.fromRGB(155, 89, 182))
 
--- Sección de Estadísticas
+-- Estadísticas
 local StatsFrame = Instance.new("Frame")
 StatsFrame.Parent = Content
 StatsFrame.BackgroundColor3 = Color3.fromRGB(30, 31, 34)
-StatsFrame.Position = UDim2.new(0, 20, 0, 130)
-StatsFrame.Size = UDim2.new(0, 260, 0, 100)
-local StatsCorner = Instance.new("UICorner")
-StatsCorner.CornerRadius = UDim.new(0, 8)
-StatsCorner.Parent = StatsFrame
+StatsFrame.Position = UDim2.new(0, 20, 0, 145)
+StatsFrame.Size = UDim2.new(0, 290, 0, 95)
+Instance.new("UICorner", StatsFrame).CornerRadius = UDim.new(0, 8)
 
 local function CreateStatLabel(name, pos)
     local lbl = Instance.new("TextLabel")
-    lbl.Name = name
     lbl.Parent = StatsFrame
     lbl.BackgroundTransparency = 1
     lbl.Position = pos
@@ -278,64 +294,38 @@ local FPSLabel = CreateStatLabel("FPS", UDim2.new(0, 10, 0, 8))
 local PingLabel = CreateStatLabel("Ping", UDim2.new(0, 10, 0, 35))
 local TimeLabel = CreateStatLabel("AFK Time", UDim2.new(0, 10, 0, 62))
 
--- Interfaz de Confirmación (Cerrar)
-local ConfirmFrame = Instance.new("Frame")
-ConfirmFrame.Parent = MainFrame
-ConfirmFrame.BackgroundColor3 = Color3.fromRGB(19, 19, 20)
-ConfirmFrame.Size = UDim2.new(1, 0, 1, 0)
-ConfirmFrame.ZIndex = 10
-ConfirmFrame.Visible = false
-
-local ConfirmText = Instance.new("TextLabel")
-ConfirmText.Parent = ConfirmFrame
-ConfirmText.BackgroundTransparency = 1
-ConfirmText.Position = UDim2.new(0, 0, 0.2, 0)
-ConfirmText.Size = UDim2.new(1, 0, 0.3, 0)
-ConfirmText.Font = Enum.Font.GothamBold
-ConfirmText.Text = "¿Seguro que deseas\ncerrar el script?"
-ConfirmText.TextColor3 = Color3.fromRGB(227, 227, 227)
-ConfirmText.TextSize = 18
-ConfirmText.ZIndex = 11
-
-local YesBtn = CreateButton("YesBtn", "Sí, cerrar", UDim2.new(0.1, 0, 0.6, 0), Color3.fromRGB(255, 76, 76))
-YesBtn.Parent = ConfirmFrame
-YesBtn.ZIndex = 11
-local NoBtn = CreateButton("NoBtn", "Cancelar", UDim2.new(0.5, 0, 0.6, 0), Color3.fromRGB(60, 64, 67))
-NoBtn.Parent = ConfirmFrame
-NoBtn.ZIndex = 11
-
--- [ LÓGICA DE VENTANA MOVIBLE (Draggable) SIN MOVER LA CÁMARA ] --
+-- [ ARREGLO DE ARRASTRE DE VENTANA (SIN BUG DE CÁMARA) ] --
 local dragging, dragInput, dragStart, startPos
-local previousCameraType = Enum.CameraType.Custom
 
 TitleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
         dragStart = input.Position
         startPos = MainFrame.Position
-        
-        -- Bloquear rotación de cámara durante el arrastre
-        previousCameraType = Camera.CameraType
-        Camera.CameraType = Enum.CameraType.Scriptable
-
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-                Camera.CameraType = previousCameraType
-            end
-        end)
     end
 end)
 
-TitleBar.InputChanged:Connect(function(input)
+TitleBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
         dragInput = input
     end
 end)
 
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
+RunService.RenderStepped:Connect(function()
+    -- Animar Fondo y Glow
+    BgGradient.Rotation = BgGradient.Rotation + 0.5
+    MainStroke.Transparency = 0.3 + 0.2 * math.sin(tick() * 3)
+    RoundStroke.Transparency = MainStroke.Transparency
+
+    -- Actualizar Arrastre
+    if dragging and dragInput then
+        local delta = dragInput.Position - dragStart
         MainFrame.Position = UDim2.new(
             startPos.X.Scale, 
             startPos.X.Offset + delta.X, 
@@ -345,124 +335,97 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Actualizar interfaz gráfica según el estado recuperado o inicial
-local function SynchronizeUI()
-    if States.Flying then
-        VolarBtn.Text = "Volar: ON"
-        VolarBtn.BackgroundColor3 = Color3.fromRGB(76, 255, 76)
-    else
-        VolarBtn.Text = "Volar: OFF"
-        VolarBtn.BackgroundColor3 = Color3.fromRGB(255, 76, 76)
-    end
+-- [ LÓGICA DE ACTUALIZACIÓN ] --
+local function FetchAndExecuteUpdate(force)
+    SaveCurrentState()
+    local url = "https://raw.githubusercontent.com/elmendezz/anti-afk-pro-script/refs/heads/main/flytool?t=" .. os.time()
+    if force then url = url .. "&nocache=true" end
 
-    if States.FlySpeed == 0 then
-        BoostBtn.Text = "Boost $: OFF"
-        BoostBtn.BackgroundColor3 = Color3.fromRGB(60, 64, 67)
-    else
-        BoostBtn.Text = "Boost $: " .. States.FlySpeed
-        BoostBtn.BackgroundColor3 = Color3.fromRGB(138, 180, 248)
-    end
-
-    if States.Noclip then
-        NoclipBtn.Text = "Noclip: ON"
-        NoclipBtn.BackgroundColor3 = Color3.fromRGB(138, 180, 248)
-    else
-        NoclipBtn.Text = "Noclip: OFF"
-        NoclipBtn.BackgroundColor3 = Color3.fromRGB(60, 64, 67)
-    end
-
-    if States.AntiAFK then
-        AntiAFKBtn.Text = "Anti-AFK: ON"
-        AntiAFKBtn.BackgroundColor3 = Color3.fromRGB(138, 180, 248)
-    else
-        AntiAFKBtn.Text = "Anti-AFK: OFF"
-        AntiAFKBtn.BackgroundColor3 = Color3.fromRGB(60, 64, 67)
-    end
-
-    if States.Minimized then
-        AntiAFKBtn.Visible = false
-        UpdateBtn.Visible = false
-        StatsFrame.Visible = false
-        MainFrame.Size = UDim2.new(0, 300, 0, 95)
-        MinimizeBtn.Text = "+"
-    else
-        AntiAFKBtn.Visible = true
-        UpdateBtn.Visible = true
-        StatsFrame.Visible = true
-        MainFrame.Size = UDim2.new(0, 300, 0, 300)
-        MinimizeBtn.Text = "-"
+    local success, result = pcall(function() return game:HttpGet(url) end)
+    if success and result and #result > 0 then
+        StarterGui:SetCore("SendNotification", { Title = "MendezFlyTool", Text = "Aplicando actualización...", Duration = 3 })
+        task.wait(0.5)
+        ScreenGui:Destroy()
+        getgenv().MendezFlyTool_Loaded = false
+        pcall(function() loadstring(result)() end)
     end
 end
 
+RefreshBtn.MouseButton1Click:Connect(function() FetchAndExecuteUpdate(false) end)
+ForceUpdateBtn.MouseButton1Click:Connect(function() 
+    ForceUpdateBtn.Text = "⏳ Descargando Forzado..."
+    FetchAndExecuteUpdate(true) 
+end)
+
+-- [ LÓGICA DE UI Y ULTRA MINIMIZAR ] --
+local function SynchronizeUI()
+    VolarBtn.Text = States.Flying and "Volar: ON" or "Volar: OFF"
+    VolarBtn.BackgroundColor3 = States.Flying and Color3.fromRGB(76, 255, 76) or Color3.fromRGB(255, 76, 76)
+    
+    BoostBtn.Text = States.FlySpeed > 0 and "Boost $: " .. States.FlySpeed or "Boost $: OFF"
+    BoostBtn.BackgroundColor3 = States.FlySpeed > 0 and Color3.fromRGB(138, 180, 248) or Color3.fromRGB(60, 64, 67)
+    
+    NoclipBtn.Text = States.Noclip and "Noclip: ON" or "Noclip: OFF"
+    NoclipBtn.BackgroundColor3 = States.Noclip and Color3.fromRGB(138, 180, 248) or Color3.fromRGB(60, 64, 67)
+
+    AntiAFKBtn.Text = States.AntiAFK and "Anti-AFK: ON" or "Anti-AFK: OFF"
+    AntiAFKBtn.BackgroundColor3 = States.AntiAFK and Color3.fromRGB(138, 180, 248) or Color3.fromRGB(60, 64, 67)
+end
 SynchronizeUI()
 
--- Minimizado exclusivo
-MinimizeBtn.MouseButton1Click:Connect(function()
-    States.Minimized = not States.Minimized
-    SynchronizeUI()
-end)
-
+-- Cerrar
 CloseBtn.MouseButton1Click:Connect(function()
-    ConfirmFrame.Visible = true
-end)
-
-NoBtn.MouseButton1Click:Connect(function()
-    ConfirmFrame.Visible = false
-end)
-
-YesBtn.MouseButton1Click:Connect(function()
     getgenv().MendezFlyTool_Loaded = false
     getgenv().MendezFlyTool_SavedState = nil
-    StopFlyAnimations()
     ScreenGui:Destroy()
 end)
 
--- [ FUNCIÓN DE RECARGA Y DESCARGA (CON ANTI-CACHÉ Y CONSERVACIÓN DE CONFIG) ] --
-local function FetchAndExecuteUpdate()
-    SaveCurrentState()
-    
-    -- Se añade ?t=os.time() para romper la caché del game:HttpGet
-    local updateUrl = "https://raw.githubusercontent.com/elmendezz/anti-afk-pro-script/refs/heads/main/flytool?t=" .. tostring(os.time())
-    local success, result = pcall(function()
-        return game:HttpGet(updateUrl)
-    end)
-    
-    if success and result and #result > 0 then
-        StarterGui:SetCore("SendNotification", {
-            Title = "MendezFlyTool",
-            Text = "Script recargado exitosamente. Aplicando cambios...",
-            Duration = 3,
-        })
-        task.wait(0.5)
-        StopFlyAnimations()
-        ScreenGui:Destroy()
-        getgenv().MendezFlyTool_Loaded = false
-        pcall(function()
-            loadstring(result)()
-        end)
-    else
-        StarterGui:SetCore("SendNotification", {
-            Title = "MendezFlyTool",
-            Text = "Error al conectar con GitHub.",
-            Duration = 4,
-        })
-    end
-end
-
--- Botón Refresh (🔄) en TitleBar
-RefreshBtn.MouseButton1Click:Connect(function()
-    RefreshBtn.Text = "⏳"
-    FetchAndExecuteUpdate()
+-- Minimizar Clásico
+MinimizeBtn.MouseButton1Click:Connect(function()
+    States.Minimized = not States.Minimized
+    Content.Visible = not States.Minimized
+    TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = States.Minimized and UDim2.new(0, 330, 0, 35) or UDim2.new(0, 330, 0, 285)
+    }):Play()
+    MinimizeBtn.Text = States.Minimized and "+" or "-"
 end)
 
--- Botón de Actualización (Updater)
-UpdateBtn.MouseButton1Click:Connect(function()
-    UpdateBtn.Text = "Bypassing Cache & Downloading..."
-    UpdateBtn.BackgroundColor3 = Color3.fromRGB(242, 139, 130)
-    task.spawn(FetchAndExecuteUpdate)
+-- Ultra Minimizar
+UltraMinBtn.MouseButton1Click:Connect(function()
+    States.UltraMinimized = true
+    TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 0, 0, 0)
+    }):Play()
+    task.wait(0.3)
+    MainFrame.Visible = false
+    RoundBtn.Visible = true
+    TweenService:Create(RoundBtn, TweenInfo.new(0.4, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 50, 0, 50)
+    }):Play()
 end)
 
--- [ LÓGICA DE VUELO UNIVERSAL CON ANIMACIONES Y BLOQUEO DE POSICIÓN ] --
+-- Restaurar de Ultra Minimizar
+RoundBtn.MouseButton1Click:Connect(function()
+    States.UltraMinimized = false
+    BrrBrrBrr()
+    TweenService:Create(RoundBtn, TweenInfo.new(0.2), {Size = UDim2.new(0, 0, 0, 0)}):Play()
+    task.wait(0.2)
+    RoundBtn.Visible = false
+    MainFrame.Visible = true
+    local targetSize = States.Minimized and UDim2.new(0, 330, 0, 35) or UDim2.new(0, 330, 0, 285)
+    TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size = targetSize
+    }):Play()
+end)
+
+-- Animación de Entrada al ejecutar el Script
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out), {
+    Size = States.Minimized and UDim2.new(0, 330, 0, 35) or UDim2.new(0, 330, 0, 285)
+}):Play()
+Content.Visible = not States.Minimized
+
+-- [ LÓGICA DE VUELO Y NOCLIP ] --
 local BodyVelocity, BodyGyro
 local lockedPosition = nil
 
@@ -470,7 +433,6 @@ local function StopFly()
     if BodyVelocity then BodyVelocity:Destroy() BodyVelocity = nil end
     if BodyGyro then BodyGyro:Destroy() BodyGyro = nil end
     lockedPosition = nil
-    StopFlyAnimations()
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
         LocalPlayer.Character.Humanoid.PlatformStand = false
     end
@@ -479,117 +441,74 @@ end
 local function StartFly()
     if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
     local HRP = LocalPlayer.Character.HumanoidRootPart
-    
     StopFly()
-    SetupFlyAnimations()
-    
-    BodyGyro = Instance.new("BodyGyro")
+    BodyGyro = Instance.new("BodyGyro", HRP)
     BodyGyro.P = 9e4
     BodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
     BodyGyro.CFrame = HRP.CFrame
-    BodyGyro.Parent = HRP
-    
-    BodyVelocity = Instance.new("BodyVelocity")
+    BodyVelocity = Instance.new("BodyVelocity", HRP)
     BodyVelocity.Velocity = Vector3.new(0,0,0)
     BodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    BodyVelocity.Parent = HRP
-    
     LocalPlayer.Character.Humanoid.PlatformStand = true
 end
 
-if States.Flying then
-    StartFly()
-end
+if States.Flying then StartFly() end
 
 VolarBtn.MouseButton1Click:Connect(function()
     States.Flying = not States.Flying
-    if States.Flying then
-        StartFly()
-    else
-        StopFly()
-    end
+    if States.Flying then StartFly() else StopFly() end
     SynchronizeUI()
 end)
 
 BoostBtn.MouseButton1Click:Connect(function()
-    States.FlySpeed = States.FlySpeed + 1
-    if States.FlySpeed > 4 then States.FlySpeed = 0 end
+    States.FlySpeed = (States.FlySpeed + 1) > 4 and 0 or (States.FlySpeed + 1)
     SynchronizeUI()
 end)
 
--- Bucle Asíncrono de Vuelo + Control de Animaciones
-task.spawn(function()
-    RunService.RenderStepped:Connect(function()
-        if States.Flying and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and BodyVelocity and BodyGyro then
-            local HRP = LocalPlayer.Character.HumanoidRootPart
-            local speed = Speeds[States.FlySpeed]
-            local camCFrame = Camera.CFrame
-            BodyGyro.CFrame = camCFrame
-            
-            local moveVector = Vector3.new(0, 0, 0)
-            if Controls then
-                moveVector = Controls:GetMoveVector()
-            end
-            
-            if moveVector.Magnitude > 0 then
-                lockedPosition = nil
-                local velocityDir = (camCFrame.RightVector * moveVector.X) + (camCFrame.LookVector * (-moveVector.Z))
-                BodyVelocity.Velocity = velocityDir * speed
-                HRP.AssemblyLinearVelocity = Vector3.zero
-
-                if currentIdleTrack and currentIdleTrack.IsPlaying then
-                    currentIdleTrack:Stop(0.1)
-                end
-                if currentFlyTrack and not currentFlyTrack.IsPlaying then
-                    currentFlyTrack:Play(0.1)
-                end
-            else
-                if not lockedPosition then
-                    lockedPosition = HRP.Position
-                end
-                BodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                HRP.AssemblyLinearVelocity = Vector3.zero
-                HRP.CFrame = CFrame.new(lockedPosition, lockedPosition + camCFrame.LookVector)
-
-                if currentFlyTrack and currentFlyTrack.IsPlaying then
-                    currentFlyTrack:Stop(0.1)
-                end
-                if currentIdleTrack and not currentIdleTrack.IsPlaying then
-                    currentIdleTrack:Play(0.1)
-                end
-            end
-        else
+RunService.RenderStepped:Connect(function()
+    if States.Flying and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and BodyVelocity and BodyGyro then
+        local HRP = LocalPlayer.Character.HumanoidRootPart
+        local speed = Speeds[States.FlySpeed]
+        local camCFrame = Camera.CFrame
+        BodyGyro.CFrame = camCFrame
+        local moveVector = Controls and Controls:GetMoveVector() or Vector3.new(0,0,0)
+        
+        if moveVector.Magnitude > 0 then
             lockedPosition = nil
+            local velocityDir = (camCFrame.RightVector * moveVector.X) + (camCFrame.LookVector * (-moveVector.Z))
+            BodyVelocity.Velocity = velocityDir * speed
+            HRP.AssemblyLinearVelocity = Vector3.zero
+        else
+            if not lockedPosition then lockedPosition = HRP.Position end
+            BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            HRP.AssemblyLinearVelocity = Vector3.zero
+            HRP.CFrame = CFrame.new(lockedPosition, lockedPosition + camCFrame.LookVector)
         end
-    end)
+    else
+        lockedPosition = nil
+    end
 end)
 
--- [ LÓGICA DE NOCLIP ] --
 NoclipBtn.MouseButton1Click:Connect(function()
     States.Noclip = not States.Noclip
     SynchronizeUI()
 end)
 
-task.spawn(function()
-    RunService.Stepped:Connect(function()
-        if States.Noclip and LocalPlayer.Character then
-            for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
-                if part:IsA("BasePart") and part.CanCollide then
-                    part.CanCollide = false
-                end
+RunService.Stepped:Connect(function()
+    if States.Noclip and LocalPlayer.Character then
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
             end
         end
-    end)
-end)
-
-LocalPlayer.CharacterAdded:Connect(function()
-    if States.Flying then
-        task.wait(1)
-        StartFly()
     end
 end)
 
--- [ LÓGICA ANTI-AFK CON VIBRACIÓN Y NOTIFICACIÓN ] --
+LocalPlayer.CharacterAdded:Connect(function()
+    if States.Flying then task.wait(1) StartFly() end
+end)
+
+-- [ LÓGICA ANTI-AFK ] --
 AntiAFKBtn.MouseButton1Click:Connect(function()
     States.AntiAFK = not States.AntiAFK
     SynchronizeUI()
@@ -599,86 +518,28 @@ LocalPlayer.Idled:Connect(function()
     if States.AntiAFK then
         VirtualUser:CaptureController()
         VirtualUser:ClickButton2(Vector2.new(0,0))
-        
-        pcall(function()
-            if UserInputService:GetGamepadConnected(Enum.UserInputType.Gamepad1) then
-                HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Large, 1)
-                task.wait(0.2)
-                HapticService:SetMotor(Enum.UserInputType.Gamepad1, Enum.VibrationMotor.Large, 0)
-            end
-        end)
-
-        StarterGui:SetCore("SendNotification", {
-            Title = "MendezFlyTool",
-            Text = "Roblox intentó desconectarte por inactividad. Evitado.",
-            Duration = 5,
-        })
     end
 end)
 
--- [ CONTADORES EN VIVO ASÍNCRONOS ] --
+-- [ ACTUALIZAR ESTADÍSTICAS (FPS, PING, TIME) ] --
 task.spawn(function()
-    local lastUpdate = tick()
-    local frames = 0
-    
+    local lastUpdate, frames = tick(), 0
     RunService.RenderStepped:Connect(function()
         frames = frames + 1
         local currentTick = tick()
-        
         if currentTick - lastUpdate >= 1 then
             FPSLabel.Text = "FPS: " .. frames
-            frames = 0
-            lastUpdate = currentTick
+            frames, lastUpdate = 0, currentTick
             
-            local ping = "N/A"
             pcall(function()
-                ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+                PingLabel.Text = "Ping: " .. math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()) .. " ms"
             end)
-            PingLabel.Text = "Ping: " .. ping .. " ms"
             
             local uptime = os.time() - States.StartTime
-            local days = math.floor(uptime / 86400)
-            local hours = math.floor((uptime % 86400) / 3600)
-            local mins = math.floor((uptime % 3600) / 60)
-            local secs = uptime % 60
-            
-            if days > 0 then
-                TimeLabel.Text = string.format("Sesión: %dd %02dh %02dm %02ds", days, hours, mins, secs)
-            else
-                TimeLabel.Text = string.format("Sesión: %02dh %02dm %02ds", hours, mins, secs)
-            end
-        end
-    end)
-end)
-
--- [ AUTO-RECONEXIÓN Y PERMANENCIA ] --
-task.spawn(function()
-    GuiService.ErrorMessageChanged:Connect(function(msg)
-        if getgenv().MendezFlyTool_Loaded then
-            SaveCurrentState()
-            local queue_teleport = syn and syn.queue_on_teleport or queue_on_teleport or fluxus and fluxus.queue_on_teleport
-            if queue_teleport then
-                queue_teleport([[
-                    repeat task.wait() until game:IsLoaded()
-                    task.wait(2)
-                    local success, result = pcall(function()
-                        return game:HttpGet("https://raw.githubusercontent.com/elmendezz/anti-afk-pro-script/refs/heads/main/flytool?t=" .. tostring(os.time()))
-                    end)
-                    if success and result then
-                        loadstring(result)()
-                    end
-                ]])
-            end
-
-            if msg and (string.find(msg:lower(), "disconnect") or string.find(msg:lower(), "kicked")) then
-                StarterGui:SetCore("SendNotification", {
-                    Title = "Reconectando...",
-                    Text = "Desconexión detectada. Reingresando al servidor...",
-                    Duration = 3,
-                })
-                task.wait(3)
-                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-            end
+            local h = math.floor(uptime / 3600)
+            local m = math.floor((uptime % 3600) / 60)
+            local s = uptime % 60
+            TimeLabel.Text = string.format("Sesión: %02dh %02dm %02ds", h, m, s)
         end
     end)
 end)
