@@ -1,4 +1,4 @@
--- Version: 7.0.0 (Native Touch Bypass & Non-Blocking Engine)
+-- Version: 6.0.0 (Native Touch Bypass & Raycast Engine)
 -- Dependencies: Roblox Client / Delta Executor (Mobile)
 -- Changelog:
 -- - Initial version: Setup of base Anti-AFK UI framework.
@@ -12,7 +12,6 @@
 -- - Version 4.0.0: Fixed mobile touch drag isolation to prevent camera movement bleed. Implemented game-world touch click bypass via VirtualInputManager SendTouchEvent.
 -- - Version 5.0.0: Added triple vibration pattern on startup (brr-brr-brr). Implemented fully isolated draggable touch points without locking camera or player movement. Added complete speed/interval configuration controls.
 -- - Version 6.0.0: Removed native VirtualInputManager Mouse events to prevent Roblox switching input modes to PC/Keyboard. Implemented Camera 3D Raycasting, native ClickDetector firing, and TouchTap injection to keep mobile touch controls completely active.
--- - Version 7.0.0: Replaced while loops with RunService (Heartbeat and RenderStepped) for maximum frame-sync performance. Removed forced TouchTap injection to prevent interference with real user input. Added task.defer for non-blocking game touches. Added InputTransparent logic for UI elements.
 
 repeat wait() until game:IsLoaded() and game.Players and game.Players.LocalPlayer and game.Players.LocalPlayer.Character
 
@@ -30,7 +29,6 @@ local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local HapticService = game:GetService("HapticService")
-local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
@@ -89,16 +87,13 @@ UIGradient.Color = ColorSequence.new{
 }
 UIGradient.Parent = MainFrame
 
--- Gradient Animation via RenderStepped (Non-blocking)
-local renderConnection
-renderConnection = RunService.RenderStepped:Connect(function()
-    if not getgenv().AutoClickerExecuted then
-        if renderConnection then renderConnection:Disconnect() end
-        return 
+task.spawn(function()
+    local rot = 0
+    while getgenv().AutoClickerExecuted and MainFrame.Parent do
+        rot = (rot + 2) % 360
+        UIGradient.Rotation = rot
+        task.wait(0.03)
     end
-    if not MainFrame.Parent then return end
-
-    UIGradient.Rotation = (UIGradient.Rotation + 2) % 360
 end)
 
 -- Main Frame Dragging
@@ -368,8 +363,7 @@ ReadyButton.MouseButton1Click:Connect(function()
         for _, p in pairs(clickPoints) do
             p.BackgroundTransparency = 0.5
             p.TextLabel.TextTransparency = 0.5
-            p.Active = true
-            pcall(function() p.InputTransparent = true end) -- Deja pasar los clicks seguramente
+            p.Active = false
         end
     else
         getgenv().ClickingActive = false
@@ -386,7 +380,6 @@ ReadyButton.MouseButton1Click:Connect(function()
             p.BackgroundTransparency = 0
             p.TextLabel.TextTransparency = 0
             p.Active = true
-            pcall(function() p.InputTransparent = false end)
         end
     end
 end)
@@ -412,7 +405,16 @@ local function performNativeGameTouch(x, y)
             end
         end
 
-        -- 2. Trigger Active Tool in Character if equipped
+        -- 2. Trigger Mobile TouchTap natively via UserInputService without changing device type
+        if UserInputService.TouchEnabled then
+            local fakeTouchVector = Vector2.new(x, y)
+            -- Dispatch TouchTap through internal Game engine bindings
+            for _, connection in pairs(getconnections(UserInputService.TouchTap)) do
+                connection:Fire({fakeTouchVector}, false)
+            end
+        end
+
+        -- 3. Trigger Active Tool in Character if equipped
         local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
         if tool then
             tool:Activate()
@@ -420,31 +422,21 @@ local function performNativeGameTouch(x, y)
     end)
 end
 
--- Execution Loop using RunService (Non-blocking)
-local accumulator = 0
-local heartbeatConnection
-heartbeatConnection = RunService.Heartbeat:Connect(function(deltaTime)
-    if not getgenv().AutoClickerExecuted then 
-        if heartbeatConnection then heartbeatConnection:Disconnect() end
-        return 
-    end
-    if not getgenv().ClickingActive then return end
-    if #clickPoints == 0 then return end
+-- Execution Loop
+task.spawn(function()
+    while getgenv().AutoClickerExecuted do
+        if getgenv().ClickingActive and #clickPoints > 0 then
+            for _, pointFrame in pairs(clickPoints) do
+                if not getgenv().ClickingActive then break end
 
-    accumulator = accumulator + deltaTime
+                local x = pointFrame.AbsolutePosition.X + (pointFrame.AbsoluteSize.X / 2)
+                local y = pointFrame.AbsolutePosition.Y + (pointFrame.AbsoluteSize.Y / 2)
 
-    if accumulator >= clickInterval then
-        accumulator = 0
-
-        for _, pointFrame in ipairs(clickPoints) do
-            if not getgenv().ClickingActive then break end
-
-            local x = pointFrame.AbsolutePosition.X + (pointFrame.AbsoluteSize.X / 2)
-            local y = pointFrame.AbsolutePosition.Y + (pointFrame.AbsoluteSize.Y / 2)
-
-            task.defer(function()
                 performNativeGameTouch(x, y)
-            end)
+            end
+            task.wait(clickInterval)
+        else
+            task.wait(0.1)
         end
     end
 end)
