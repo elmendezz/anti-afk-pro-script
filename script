@@ -7,16 +7,78 @@ if getgenv().AntiAfkExecuted and thisoneissocoldww then
 end
 
 getgenv().AntiAfkExecuted = true
+getgenv().AntiAfkEnabled = true
 
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local HapticService = game:GetService("HapticService")
+local TeleportService = game:GetService("TeleportService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+
 local LocalPlayer = Players.LocalPlayer
 
+-- Fetch explicit UserId for angel200xp
+local targetUserId = 1
+local successUserId, fetchedId = pcall(function()
+    return Players:GetUserIdFromNameAsync("angel200xp")
+end)
+if successUserId and fetchedId then
+    targetUserId = fetchedId
+else
+    targetUserId = LocalPlayer.UserId
+end
+
+-- Teleport Coordinate Memory / Position Restore
+local PosFileName = "angel200xp_pos.txt"
+
+task.spawn(function()
+    if readfile and isfile and isfile(PosFileName) then
+        local savedData = readfile(PosFileName)
+        if savedData and savedData ~= "" then
+            local p = HttpService:JSONDecode(savedData)
+            if p and p.PlaceId == game.PlaceId then
+                local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                local hrp = char:WaitForChild("HumanoidRootPart", 5)
+                if hrp then
+                    task.wait(1)
+                    hrp.CFrame = CFrame.new(p.X, p.Y, p.Z)
+                end
+            end
+        end
+        pcall(function() writefile(PosFileName, "") end)
+    end
+end)
+
+-- Continuous position tracking
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if getgenv().AntiAfkExecuted and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local pos = LocalPlayer.Character.HumanoidRootPart.Position
+            local data = {
+                PlaceId = game.PlaceId,
+                X = pos.X,
+                Y = pos.Y,
+                Z = pos.Z
+            }
+            pcall(function()
+                if writefile then
+                    writefile(PosFileName, HttpService:JSONEncode(data))
+                end
+            end)
+        end
+    end
+end)
+
+-- GUI Creation
 local thisoneissocoldww = Instance.new("ScreenGui")
 local madebybloodofbatus = Instance.new("Frame")
 local UICornerw = Instance.new("UICorner")
 local DestroyButton = Instance.new("TextButton")
+local ToggleButton = Instance.new("TextButton")
 local uselesslabelone = Instance.new("TextLabel")
 local timerlabel = Instance.new("TextLabel")
 local uselesslabeltwo = Instance.new("TextLabel")
@@ -27,63 +89,113 @@ local uselessframeone = Instance.new("Frame")
 local UICornerww = Instance.new("UICorner")
 local uselesslabelfour = Instance.new("TextLabel")
 
+-- Animated Background Gradient
+local UIGradient = Instance.new("UIGradient")
+UIGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 45)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(60, 20, 70)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 40, 60))
+}
+UIGradient.Parent = madebybloodofbatus
+
+-- Rainbow Gradient Animation Loop
+task.spawn(function()
+    local rot = 0
+    while getgenv().AntiAfkExecuted do
+        rot = (rot + 2) % 360
+        UIGradient.Rotation = rot
+        task.wait(0.03)
+    end
+end)
+
 -- Custom User Profile Elements
 local AvatarImage = Instance.new("ImageLabel")
 local AvatarCorner = Instance.new("UICorner")
 local UserInfoLabel = Instance.new("TextLabel")
 
---Properties:
-
+-- Properties:
 thisoneissocoldww.Name = "thisoneissocoldww"
 thisoneissocoldww.Parent = game.CoreGui
 thisoneissocoldww.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 madebybloodofbatus.Name = "madebybloodofbatus"
 madebybloodofbatus.Parent = thisoneissocoldww
-madebybloodofbatus.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+madebybloodofbatus.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 madebybloodofbatus.Position = UDim2.new(0.085, 0, 0.131, 0)
-madebybloodofbatus.Size = UDim2.new(0, 240, 0, 130)
+madebybloodofbatus.Size = UDim2.new(0, 250, 0, 145)
+madebybloodofbatus.Active = true
 
 UICornerw.Name = "UICornerw"
 UICornerw.Parent = madebybloodofbatus
 
+-- Destroy (X) Button
 DestroyButton.Name = "DestroyButton"
 DestroyButton.Parent = madebybloodofbatus
 DestroyButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 DestroyButton.BackgroundTransparency = 1.000
-DestroyButton.Position = UDim2.new(0.87, 0, 0.02, 0)
-DestroyButton.Size = UDim2.new(0, 27, 0, 15)
+DestroyButton.Position = UDim2.new(0.88, 0, 0.02, 0)
+DestroyButton.Size = UDim2.new(0, 25, 0, 20)
 DestroyButton.Font = Enum.Font.SourceSansBold
 DestroyButton.Text = "X"
 DestroyButton.TextColor3 = Color3.fromRGB(255, 70, 70)
-DestroyButton.TextSize = 16.000
+DestroyButton.TextSize = 18.000
 
-DestroyButton.MouseButton1Click:connect(function()
+DestroyButton.MouseButton1Click:Connect(function()
 	getgenv().AntiAfkExecuted = false
 	getgenv().zamanbaslaticisi = false
-	wait(0.1)
+	task.wait(0.1)
 	thisoneissocoldww:Destroy()
+end)
+
+-- ON/OFF Power Button
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Parent = madebybloodofbatus
+ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+ToggleButton.Position = UDim2.new(0.65, 0, 0.03, 0)
+ToggleButton.Size = UDim2.new(0, 50, 0, 20)
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.Text = "ON"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextSize = 12.000
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 4)
+ToggleCorner.Parent = ToggleButton
+
+ToggleButton.MouseButton1Click:Connect(function()
+    getgenv().AntiAfkEnabled = not getgenv().AntiAfkEnabled
+    if getgenv().AntiAfkEnabled then
+        ToggleButton.Text = "ON"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+        uselesslabelfour.Text = "Anti-AFK Activo"
+        uselesslabelfour.TextColor3 = Color3.fromRGB(0, 255, 127)
+    else
+        ToggleButton.Text = "OFF"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+        uselesslabelfour.Text = "Anti-AFK Pausado"
+        uselesslabelfour.TextColor3 = Color3.fromRGB(255, 100, 100)
+    end
 end)
 
 uselesslabelone.Name = "uselesslabelone"
 uselesslabelone.Parent = madebybloodofbatus
 uselesslabelone.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 uselesslabelone.BackgroundTransparency = 1.000
-uselesslabelone.Position = UDim2.new(0.05, 0, 0.02, 0)
-uselesslabelone.Size = UDim2.new(0, 180, 0, 20)
+uselesslabelone.Position = UDim2.new(0.05, 0, 0.03, 0)
+uselesslabelone.Size = UDim2.new(0, 140, 0, 20)
 uselesslabelone.Font = Enum.Font.SourceSansBold
-uselesslabelone.Text = "Anti AFK - Mobile Delta"
+uselesslabelone.Text = "Anti AFK - Delta"
 uselesslabelone.TextColor3 = Color3.fromRGB(255, 255, 255)
 uselesslabelone.TextSize = 14.000
 uselesslabelone.TextXAlignment = Enum.TextXAlignment.Left
 
--- Profile Picture & Name setup
+-- Explicit Profile Picture & Name for angel200xp
 AvatarImage.Name = "AvatarImage"
 AvatarImage.Parent = madebybloodofbatus
 AvatarImage.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-AvatarImage.Position = UDim2.new(0.05, 0, 0.18, 0)
-AvatarImage.Size = UDim2.new(0, 32, 0, 32)
-AvatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. LocalPlayer.UserId .. "&w=150&h=150"
+AvatarImage.Position = UDim2.new(0.05, 0, 0.20, 0)
+AvatarImage.Size = UDim2.new(0, 36, 0, 36)
+AvatarImage.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(targetUserId) .. "&w=150&h=150"
 
 AvatarCorner.CornerRadius = UDim.new(1, 0)
 AvatarCorner.Parent = AvatarImage
@@ -92,19 +204,19 @@ UserInfoLabel.Name = "UserInfoLabel"
 UserInfoLabel.Parent = madebybloodofbatus
 UserInfoLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 UserInfoLabel.BackgroundTransparency = 1.000
-UserInfoLabel.Position = UDim2.new(0.21, 0, 0.18, 0)
-UserInfoLabel.Size = UDim2.new(0, 170, 0, 32)
+UserInfoLabel.Position = UDim2.new(0.22, 0, 0.20, 0)
+UserInfoLabel.Size = UDim2.new(0, 180, 0, 36)
 UserInfoLabel.Font = Enum.Font.SourceSansBold
-UserInfoLabel.Text = "angel200xp (" .. LocalPlayer.Name .. ")\n[elmendezz]"
+UserInfoLabel.Text = "angel200xp\n[elmendezz]"
 UserInfoLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
-UserInfoLabel.TextSize = 12.000
+UserInfoLabel.TextSize = 13.000
 UserInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 timerlabel.Name = "timerlabel"
 timerlabel.Parent = madebybloodofbatus
 timerlabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 timerlabel.BackgroundTransparency = 1.000
-timerlabel.Position = UDim2.new(0.65, 0, 0.72, 0)
+timerlabel.Position = UDim2.new(0.65, 0, 0.75, 0)
 timerlabel.Size = UDim2.new(0, 60, 0, 20)
 timerlabel.Font = Enum.Font.SourceSans
 timerlabel.Text = "0:0:0"
@@ -115,7 +227,7 @@ uselesslabeltwo.Name = "uselesslabeltwo"
 uselesslabeltwo.Parent = madebybloodofbatus
 uselesslabeltwo.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 uselesslabeltwo.BackgroundTransparency = 1.000
-uselesslabeltwo.Position = UDim2.new(0.05, 0, 0.50, 0)
+uselesslabeltwo.Position = UDim2.new(0.05, 0, 0.52, 0)
 uselesslabeltwo.Size = UDim2.new(0, 29, 0, 20)
 uselesslabeltwo.Font = Enum.Font.SourceSans
 uselesslabeltwo.Text = "Ping: "
@@ -126,7 +238,7 @@ fpslabel.Name = "fpslabel"
 fpslabel.Parent = madebybloodofbatus
 fpslabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 fpslabel.BackgroundTransparency = 1.000
-fpslabel.Position = UDim2.new(0.70, 0, 0.50, 0)
+fpslabel.Position = UDim2.new(0.70, 0, 0.52, 0)
 fpslabel.Size = UDim2.new(0, 55, 0, 20)
 fpslabel.Font = Enum.Font.SourceSans
 fpslabel.Text = "--"
@@ -137,7 +249,7 @@ uselesslabelthree.Name = "uselesslabelthree"
 uselesslabelthree.Parent = madebybloodofbatus
 uselesslabelthree.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 uselesslabelthree.BackgroundTransparency = 1.000
-uselesslabelthree.Position = UDim2.new(0.50, 0, 0.50, 0)
+uselesslabelthree.Position = UDim2.new(0.50, 0, 0.52, 0)
 uselesslabelthree.Size = UDim2.new(0, 26, 0, 20)
 uselesslabelthree.Font = Enum.Font.SourceSans
 uselesslabelthree.Text = "Fps: "
@@ -148,7 +260,7 @@ pinglabel.Name = "pinglabel"
 pinglabel.Parent = madebybloodofbatus
 pinglabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 pinglabel.BackgroundTransparency = 1.000
-pinglabel.Position = UDim2.new(0.20, 0, 0.50, 0)
+pinglabel.Position = UDim2.new(0.20, 0, 0.52, 0)
 pinglabel.Size = UDim2.new(0, 55, 0, 20)
 pinglabel.Font = Enum.Font.SourceSans
 pinglabel.Text = "--"
@@ -159,8 +271,8 @@ pinglabel.TextWrapped = true
 uselessframeone.Name = "uselessframeone"
 uselessframeone.Parent = madebybloodofbatus
 uselessframeone.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-uselessframeone.Position = UDim2.new(0.02, 0, 0.45, 0)
-uselessframeone.Size = UDim2.new(0, 230, 0, 3)
+uselessframeone.Position = UDim2.new(0.02, 0, 0.48, 0)
+uselessframeone.Size = UDim2.new(0, 240, 0, 3)
 
 UICornerww.CornerRadius = UDim.new(0, 50)
 UICornerww.Name = "UICornerww"
@@ -170,7 +282,7 @@ uselesslabelfour.Name = "uselesslabelfour"
 uselesslabelfour.Parent = madebybloodofbatus
 uselesslabelfour.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 uselesslabelfour.BackgroundTransparency = 1.000
-uselesslabelfour.Position = UDim2.new(0.05, 0, 0.72, 0)
+uselesslabelfour.Position = UDim2.new(0.05, 0, 0.75, 0)
 uselesslabelfour.Size = UDim2.new(0, 130, 0, 20)
 uselesslabelfour.Font = Enum.Font.SourceSans
 uselesslabelfour.Text = "Anti-AFK Activo"
@@ -178,30 +290,19 @@ uselesslabelfour.TextColor3 = Color3.fromRGB(0, 255, 127)
 uselesslabelfour.TextSize = 14.000
 uselesslabelfour.TextXAlignment = Enum.TextXAlignment.Left
 
--- System Drag Logic
-local Drag = game.CoreGui.thisoneissocoldww.madebybloodofbatus
-gsCoreGui = game:GetService("CoreGui")
-gsTween = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local dragging
+-- Isolated Mobile Drag Logic (Prevents camera/character movement bleed)
+local Drag = madebybloodofbatus
+local dragging = false
 local dragInput
 local dragStart
 local startPos
-
-local function update(input)
-	local delta = input.Position - dragStart
-	local dragTime = 0.04
-	local SmoothDrag = {}
-	SmoothDrag.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-	local dragSmoothFunction = gsTween:Create(Drag, TweenInfo.new(dragTime, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), SmoothDrag)
-	dragSmoothFunction:Play()
-end
 
 Drag.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		dragging = true
 		dragStart = input.Position
 		startPos = Drag.Position
+		
 		input.Changed:Connect(function()
 			if input.UserInputState == Enum.UserInputState.End then
 				dragging = false
@@ -217,17 +318,23 @@ Drag.InputChanged:Connect(function(input)
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if input == dragInput and dragging and Drag.Size then
-		update(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - dragStart
+		local SmoothDrag = {
+			Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		}
+		TweenService:Create(Drag, TweenInfo.new(0.04, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), SmoothDrag):Play()
 	end
 end)
 
 -- Anti AFK Event Handler + Mobile Notification & Vibration
-local bbbatusxxxddddd = game:GetService('VirtualUser')
+local VirtualUser = game:GetService('VirtualUser')
 
 LocalPlayer.Idled:Connect(function()
-	bbbatusxxxddddd:CaptureController()
-	bbbatusxxxddddd:ClickButton2(Vector2.new())
+    if not getgenv().AntiAfkEnabled then return end
+
+	VirtualUser:CaptureController()
+	VirtualUser:ClickButton2(Vector2.new())
 	
 	-- Mobile Device Vibration Trigger
 	pcall(function()
@@ -248,10 +355,16 @@ LocalPlayer.Idled:Connect(function()
 	end)
 end)
 
+-- Auto Reconnect on Kick/Disconnect
+GuiService = game:GetService("GuiService")
+GuiService.ErrorMessageChanged:Connect(function()
+    task.wait(0.5)
+    pcall(function()
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end)
+end)
+
 -- Stats Logic (FPS)
-local FPSsLabel = fpslabel
-local RunService = game:GetService("RunService")
-local RenderStepped = RunService.RenderStepped
 local sec = nil
 local FPS = {}
 
@@ -267,12 +380,12 @@ local function fre()
 end
 
 sec = tick()
-RenderStepped:Connect(fre)
+RunService.RenderStepped:Connect(fre)
 
 -- Stats Logic (Ping)
-spawn(function()
+task.spawn(function()
 	repeat
-		wait(1)
+		task.wait(1)
 		local success, result = pcall(function()
 			return math.floor(game:GetService("Stats"):FindFirstChild("PerformanceStats").Ping:GetValue())
 		end)
@@ -291,7 +404,7 @@ getgenv().zamanbaslaticisi = true
 
 task.spawn(function()
 	while getgenv().zamanbaslaticisi do
-		wait(1)
+		task.wait(1)
 		saniye = saniye + 1
 
 		if saniye >= 60 then
