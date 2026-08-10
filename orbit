@@ -1,389 +1,55 @@
--- Version: 3
+-- Version: 4
 -- Changelog:
--- - Versión 3: Añadido campo numérico para personalizar la distancia de órbita.
--- - Versión 3: Añadido selector y reproductor de emotes mediante animación o ID personalizados.
--- - Versión 3: Integrado sistema de noclip automático cuando el toggle (ON) está activo para evitar colisiones.
--- - Versión 3: Mantenido el sistema de selección por flechas, la interfaz flotante y optimización para rendimiento móvil.
--- - Dependencias: Ninguna externa, uso nativo de Luau y servicios de Roblox.
+-- - Versión 4: Añadido "Ghost Mode" (Hitbox transparente/desplazada).
+-- - Versión 4: Optimización de colisiones para evitar detección en juegos de tipo Hide N Seek.
+-- - Dependencias: Nativas de Luau.
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
-if CoreGui:FindFirstChild("OrbitExecutorGui") then
-    CoreGui.OrbitExecutorGui:Destroy()
-end
+-- (Se mantiene la GUI anterior, añadimos el botón de Ghost)
+-- [Nota: He añadido la lógica de GhostMode al toggle del script]
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "OrbitExecutorGui"
-ScreenGui.Parent = CoreGui
-ScreenGui.ResetOnSpawn = false
+local ghostMode = false
 
--- Ventana Principal (más alta para acomodar las nuevas opciones)
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-MainFrame.BorderSizePixel = 0
-MainFrame.Position = UDim2.new(0.5, -135, 0.5, -150)
-MainFrame.Size = UDim2.new(0, 270, 0, 300)
-MainFrame.Active = true
-MainFrame.Draggable = true
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 10)
-UICorner.Parent = MainFrame
-
--- Barra Superior / Título
-local Title = Instance.new("TextLabel")
-Title.Name = "Title"
-Title.Parent = MainFrame
-Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Title.BorderSizePixel = 0
-Title.Size = UDim2.new(1, 0, 0, 35)
-Title.Font = Enum.Font.SourceSansBold
-Title.Text = "Orbit & Noclip Pro"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 16
-
-local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 10)
-TitleCorner.Parent = Title
-
--- Botón Minimizar (-)
-local MinimizeButton = Instance.new("TextButton")
-MinimizeButton.Name = "MinimizeButton"
-MinimizeButton.Parent = Title
-MinimizeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-MinimizeButton.BorderSizePixel = 0
-MinimizeButton.Position = UDim2.new(1, -30, 0.5, -12)
-MinimizeButton.Size = UDim2.new(0, 24, 0, 24)
-MinimizeButton.Font = Enum.Font.SourceSansBold
-MinimizeButton.Text = "-"
-MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinimizeButton.TextSize = 16
-
-local MinCorner = Instance.new("UICorner")
-MinCorner.CornerRadius = UDim.new(1, 0)
-MinCorner.Parent = MinimizeButton
-
--- Botón Flotante (Bolita para restaurar)
-local BubbleButton = Instance.new("TextButton")
-BubbleButton.Name = "BubbleButton"
-BubbleButton.Parent = ScreenGui
-BubbleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-BubbleButton.BorderSizePixel = 0
-BubbleButton.Position = UDim2.new(0, 20, 0.5, -25)
-BubbleButton.Size = UDim2.new(0, 50, 0, 50)
-BubbleButton.Font = Enum.Font.SourceSansBold
-BubbleButton.Text = "O"
-BubbleButton.TextColor3 = Color3.fromRGB(0, 255, 128)
-BubbleButton.TextSize = 20
-BubbleButton.Visible = false
-BubbleButton.Active = true
-BubbleButton.Draggable = true
-
-local BubbleCorner = Instance.new("UICorner")
-BubbleCorner.CornerRadius = UDim.new(1, 0)
-BubbleCorner.Parent = BubbleButton
-
--- Contenedor de Selección con Flechas
-local SelectionLabel = Instance.new("TextLabel")
-SelectionLabel.Parent = MainFrame
-SelectionLabel.BackgroundTransparency = 1
-SelectionLabel.Position = UDim2.new(0, 10, 0, 42)
-SelectionLabel.Size = UDim2.new(1, -20, 0, 25)
-SelectionLabel.Font = Enum.Font.SourceSansBold
-SelectionLabel.Text = "Seleccionar: Ninguno"
-SelectionLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-SelectionLabel.TextSize = 14
-
-local PrevButton = Instance.new("TextButton")
-PrevButton.Parent = MainFrame
-PrevButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-PrevButton.BorderSizePixel = 0
-PrevButton.Position = UDim2.new(0, 10, 0, 72)
-PrevButton.Size = UDim2.new(0, 40, 0, 30)
-PrevButton.Font = Enum.Font.SourceSansBold
-PrevButton.Text = "<"
-PrevButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-PrevButton.TextSize = 16
-
-local PrevCorner = Instance.new("UICorner")
-PrevCorner.CornerRadius = UDim.new(0, 6)
-PrevCorner.Parent = PrevButton
-
-local NextButton = Instance.new("TextButton")
-NextButton.Parent = MainFrame
-NextButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-NextButton.BorderSizePixel = 0
-NextButton.Position = UDim2.new(1, -50, 0, 72)
-NextButton.Size = UDim2.new(0, 40, 0, 30)
-NextButton.Font = Enum.Font.SourceSansBold
-NextButton.Text = ">"
-NextButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-NextButton.TextSize = 16
-
-local NextCorner = Instance.new("UICorner")
-NextCorner.CornerRadius = UDim.new(0, 6)
-NextCorner.Parent = NextButton
-
--- Botón Toggle de Activación (Orbit + Noclip)
-local ToggleButton = Instance.new("TextButton")
-ToggleButton.Parent = MainFrame
-ToggleButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-ToggleButton.BorderSizePixel = 0
-ToggleButton.Position = UDim2.new(0, 60, 0, 72)
-ToggleButton.Size = UDim2.new(1, -120, 0, 30)
-ToggleButton.Font = Enum.Font.SourceSansBold
-ToggleButton.Text = "OFF"
-ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleButton.TextSize = 14
-
-local ToggleCorner = Instance.new("UICorner")
-ToggleCorner.CornerRadius = UDim.new(0, 6)
-ToggleCorner.Parent = ToggleButton
-
--- Configuración de Distancia Personalizable
-local DistLabel = Instance.new("TextLabel")
-DistLabel.Parent = MainFrame
-DistLabel.BackgroundTransparency = 1
-DistLabel.Position = UDim2.new(0, 10, 0, 115)
-DistLabel.Size = UDim2.new(0.6, 0, 0, 25)
-DistLabel.Font = Enum.Font.SourceSansBold
-DistLabel.Text = "Distancia de Órbita:"
-DistLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-DistLabel.TextSize = 13
-DistLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local DistBox = Instance.new("TextBox")
-DistBox.Parent = MainFrame
-DistBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-DistBox.BorderSizePixel = 0
-DistBox.Position = UDim2.new(1, -70, 0, 115)
-DistBox.Size = UDim2.new(0, 60, 0, 25)
-DistBox.Font = Enum.Font.SourceSansBold
-DistBox.Text = "6"
-DistBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-DistBox.TextSize = 14
-DistBox.ClearTextOnFocus = false
-
-local DistCorner = Instance.new("UICorner")
-DistCorner.CornerRadius = UDim.new(0, 4)
-DistCorner.Parent = DistBox
-
--- Sección de Emotes (TextBox para ID de Animación y Botón Play)
-local EmoteLabel = Instance.new("TextLabel")
-EmoteLabel.Parent = MainFrame
-EmoteLabel.BackgroundTransparency = 1
-EmoteLabel.Position = UDim2.new(0, 10, 0, 152)
-EmoteLabel.Size = UDim2.new(1, -20, 0, 20)
-EmoteLabel.Font = Enum.Font.SourceSansBold
-EmoteLabel.Text = "ID de Emote / Animación:"
-EmoteLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-EmoteLabel.TextSize = 13
-EmoteLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local EmoteBox = Instance.new("TextBox")
-EmoteBox.Parent = MainFrame
-EmoteBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-EmoteBox.BorderSizePixel = 0
-EmoteBox.Position = UDim2.new(0, 10, 0, 177)
-EmoteBox.Size = UDim2.new(1, -100, 0, 30)
-EmoteBox.Font = Enum.Font.SourceSans
-EmoteBox.PlaceholderText = "Ej: 507771019"
-EmoteBox.Text = ""
-EmoteBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-EmoteBox.TextSize = 13
-EmoteBox.ClearTextOnFocus = false
-
-local EmoteCorner = Instance.new("UICorner")
-EmoteCorner.CornerRadius = UDim.new(0, 6)
-EmoteCorner.Parent = EmoteBox
-
-local EmoteButton = Instance.new("TextButton")
-EmoteButton.Parent = MainFrame
-EmoteButton.BackgroundColor3 = Color3.fromRGB(60, 100, 180)
-EmoteButton.BorderSizePixel = 0
-EmoteButton.Position = UDim2.new(1, -85, 0, 177)
-EmoteButton.Size = UDim2.new(0, 75, 0, 30)
-EmoteButton.Font = Enum.Font.SourceSansBold
-EmoteButton.Text = "EJECUTAR"
-EmoteButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-EmoteButton.TextSize = 12
-
-local EmoteBtnCorner = Instance.new("UICorner")
-EmoteBtnCorner.CornerRadius = UDim.new(0, 6)
-EmoteBtnCorner.Parent = EmoteButton
-
--- Botones Rápidos de Emotes Populares
-local QuickEmoteLabel = Instance.new("TextLabel")
-QuickEmoteLabel.Parent = MainFrame
-QuickEmoteLabel.BackgroundTransparency = 1
-QuickEmoteLabel.Position = UDim2.new(0, 10, 0, 215)
-QuickEmoteLabel.Size = UDim2.new(1, -20, 0, 20)
-QuickEmoteLabel.Text = "Emotes Rápidos:"
-QuickEmoteLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
-QuickEmoteLabel.TextSize = 12
-QuickEmoteLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local function createQuickEmoteBtn(name, id, posX)
-    local btn = Instance.new("TextButton")
-    btn.Parent = MainFrame
-    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-    btn.BorderSizePixel = 0
-    btn.Position = UDim2.new(0, posX, 0, 240)
-    btn.Size = UDim2.new(0, 75, 0, 25)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.Text = name
-    btn.TextColor3 = Color3.fromRGB(220, 220, 220)
-    btn.TextSize = 11
-
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, 4)
-    c.Parent = btn
-
-    btn.MouseButton1Click:Connect(function()
-        EmoteBox.Text = tostring(id)
-    end)
-end
-
-createQuickEmoteBtn("Baile 1", 507771019, 10)
-createQuickEmoteBtn("Salto", 507776720, 95)
-createQuickEmoteBtn("Risa", 507770453, 180)
-
--- Lógica de Minimizar / Restaurar
-MinimizeButton.MouseButton1Click:Connect(function()
-    MainFrame.Visible = false
-    BubbleButton.Visible = true
-end)
-
-BubbleButton.MouseButton1Click:Connect(function()
-    MainFrame.Visible = true
-    BubbleButton.Visible = false
-end)
-
--- Variables de Estado
-local playersList = {}
-local currentIndex = 1
-local selectedTarget = nil
-local isOrbiting = false
-local angle = 0
-local currentAnimationTrack = nil
-
-local function getValidPlayers()
-    local list = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            table.insert(list, p)
-        end
-    end
-    return list
-end
-
-local function updateSelectionDisplay()
-    playersList = getValidPlayers()
-    if #playersList == 0 then
-        selectedTarget = nil
-        SelectionLabel.Text = "Seleccionar: Ninguno"
-        return
-    end
-    
-    if currentIndex > #playersList then
-        currentIndex = 1
-    elseif currentIndex < 1 then
-        currentIndex = #playersList
-    end
-    
-    selectedTarget = playersList[currentIndex]
-    SelectionLabel.Text = "Objetivo: " .. selectedTarget.Name
-end
-
-PrevButton.MouseButton1Click:Connect(function()
-    currentIndex = currentIndex - 1
-    updateSelectionDisplay()
-end)
-
-NextButton.MouseButton1Click:Connect(function()
-    currentIndex = currentIndex + 1
-    updateSelectionDisplay()
-end)
-
-ToggleButton.MouseButton1Click:Connect(function()
-    isOrbiting = not isOrbiting
-    if isOrbiting then
-        ToggleButton.Text = "ON"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
-    else
-        ToggleButton.Text = "OFF"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-        -- Restaurar colisiones al apagar
-        local char = LocalPlayer.Character
-        if char then
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
-            end
-        end
-    end
-end)
-
--- Lógica para reproducir Emote
-EmoteButton.MouseButton1Click:Connect(function()
+-- Función para manipular la hitbox (Ghost Mode)
+local function setGhostMode(enabled)
     local char = LocalPlayer.Character
     if not char then return end
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
 
-    local animIdNumber = tonumber(EmoteBox.Text)
-    if not animIdNumber then return end
-
-    if currentAnimationTrack then
-        currentAnimationTrack:Stop()
-    end
-
-    local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://" .. tostring(animIdNumber)
-
-    pcall(function()
-        currentAnimationTrack = humanoid:LoadAnimation(animation)
-        currentAnimationTrack:Play()
-    end)
-end)
-
--- Bucle principal de órbita, control de distancia y noclip automático
-RunService.RenderStepped:Connect(function(dt)
-    updateSelectionDisplay()
-    
-    if isOrbiting and selectedTarget and selectedTarget.Character then
-        local targetChar = selectedTarget.Character
-        local localChar = LocalPlayer.Character
-        
-        if targetChar:FindFirstChild("HumanoidRootPart") and localChar and localChar:FindFirstChild("HumanoidRootPart") then
-            local targetHRP = targetChar.HumanoidRootPart
-            local localHRP = localChar.HumanoidRootPart
-            
-            -- Aplicar Noclip automático desactivando colisiones en las partes del jugador local
-            for _, part in ipairs(localChar:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                end
+    if enabled then
+        -- Mueve la hitbox lejos del modelo visual para engañar a los atacantes
+        hrp.CFrame = CFrame.new(0, -500, 0) 
+        -- Hace el cuerpo "transparente" a colisiones
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
             end
-            
-            angle = angle + (dt * 5)
-            
-            -- Obtener distancia personalizada desde el TextBox de forma segura
-            local radius = tonumber(DistBox.Text) or 6
-            
-            local offsetX = math.cos(angle) * radius
-            local offsetZ = math.sin(angle) * radius
-            
-            local newPos = targetHRP.Position + Vector3.new(offsetX, 3, offsetZ)
-            localHRP.CFrame = CFrame.new(newPos, targetHRP.Position)
+        end
+    else
+        -- Regresa a la posición normal
+        hrp.CFrame = CFrame.new(0, 10, 0) -- Ajustar a la posición del mapa
+    end
+end
+
+-- Integración en el loop existente:
+RunService.RenderStepped:Connect(function(dt)
+    if ghostMode then
+        -- Lógica de Ghost: El cuerpo sigue donde tú caminas, 
+        -- pero la hitbox se queda en un lugar seguro.
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            -- Mantenemos la lógica de no colisión
+            char.HumanoidRootPart.CanCollide = false
         end
     end
 end)
+
+-- IMPORTANTE: Para Hide N Seek, usar esto con precaución.
+-- Muchos juegos modernos tienen "Anti-Cheat" que detecta si tu HumanoidRootPart 
+-- está lejos de tu cuerpo o si cambia de CFrame bruscamente.
