@@ -1,0 +1,273 @@
+-- Version: 1
+-- Changelog:
+-- * Version:1 - Implementado sistema ESP completo (Enemigos en Rojo, Amigos en Verde con distancia).
+-- * Version:1 - Creada interfaz gráfica (GUI) flotante y estilizada con soporte para minimizar, cerrar y cambiar de objetivo.
+-- * Version:1 - Añadido sistema de teletransporte directo al jugador seleccionado con manejo de errores de reaparición.
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
+
+-- Evitar duplicados si se ejecuta varias veces
+if CoreGui:FindFirstChild("ProESP_GUI") then
+    CoreGui.ProESP_GUI:Destroy()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ProESP_GUI"
+ScreenGui.Parent = CoreGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 260, 0, 320)
+MainFrame.Position = UDim2.new(0.05, 0, 0.2, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+local TitleBar = Instance.new("TextLabel")
+TitleBar.Size = UDim2.new(1, 0, 0, 35)
+TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+TitleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleBar.Text = "  ESP & Teleport Menu"
+TitleBar.TextSize = 14
+TitleBar.Font = Enum.Font.GothamBold
+TitleBar.TextXAlignment = Enum.TextXAlignment.Left
+TitleBar.Parent = MainFrame
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 8)
+TitleCorner.Parent = TitleBar
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 30, 0, 35)
+CloseBtn.Position = UDim2.new(1, -30, 0, 0)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+CloseBtn.TextSize = 14
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Parent = MainFrame
+
+local MinBtn = Instance.new("TextButton")
+MinBtn.Size = UDim2.new(0, 30, 0, 35)
+MinBtn.Position = UDim2.new(1, -60, 0, 0)
+MinBtn.BackgroundTransparency = 1
+MinBtn.Text = "-"
+MinBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+MinBtn.TextSize = 16
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.Parent = MainFrame
+
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(1, 0, 1, -35)
+ContentFrame.Position = UDim2.new(0, 0, 0, 35)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MainFrame
+
+local TargetLabel = Instance.new("TextLabel")
+TargetLabel.Size = UDim2.new(1, -20, 0, 40)
+TargetLabel.Position = UDim2.new(0, 10, 0, 10)
+TargetLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+TargetLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TargetLabel.Text = "Seleccionado: Ninguno"
+TargetLabel.TextSize = 12
+TargetLabel.Font = Enum.Font.Gotham
+TargetLabel.Parent = ContentFrame
+
+local TargetCorner = Instance.new("UICorner")
+TargetCorner.CornerRadius = UDim.new(0, 6)
+TargetCorner.Parent = TargetLabel
+
+local PrevBtn = Instance.new("TextButton")
+PrevBtn.Size = UDim2.new(0.48, 0, 0, 40)
+PrevBtn.Position = UDim2.new(0, 10, 0, 65)
+PrevBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+PrevBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+PrevBtn.Text = "< Anterior"
+PrevBtn.TextSize = 12
+PrevBtn.Font = Enum.Font.GothamBold
+PrevBtn.Parent = ContentFrame
+
+local PrevCorner = Instance.new("UICorner")
+PrevCorner.CornerRadius = UDim.new(0, 6)
+PrevCorner.Parent = PrevBtn
+
+local NextBtn = Instance.new("TextButton")
+NextBtn.Size = UDim2.new(0.48, 0, 0, 40)
+NextBtn.Position = UDim2.new(0.52, -5, 0, 65)
+NextBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+NextBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+NextBtn.Text = "Siguiente >"
+NextBtn.TextSize = 12
+NextBtn.Font = Enum.Font.GothamBold
+NextBtn.Parent = ContentFrame
+
+local NextCorner = Instance.new("UICorner")
+NextCorner.CornerRadius = UDim.new(0, 6)
+NextCorner.Parent = NextBtn
+
+local TpBtn = Instance.new("TextButton")
+TpBtn.Size = UDim2.new(1, -20, 0, 50)
+TpBtn.Position = UDim2.new(0, 10, 0, 120)
+TpBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 127)
+TpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+TpBtn.Text = "TELEPORTAR"
+TpBtn.TextSize = 14
+TpBtn.Font = Enum.Font.GothamBold
+TpBtn.Parent = ContentFrame
+
+local TpCorner = Instance.new("UICorner")
+TpCorner.CornerRadius = UDim.new(0, 6)
+TpCorner.Parent = TpBtn
+
+local ESPHolder = Instance.new("Folder")
+ESPHolder.Name = "ESP_Objects"
+ESPHolder.Parent = ScreenGui
+
+local espCache = {}
+local playersList = {}
+local currentIndex = 1
+
+local function updatePlayersList()
+    playersList = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(playersList, player)
+        end
+    end
+    if currentIndex > #playersList then
+        currentIndex = 1
+    end
+end
+
+Players.PlayerAdded:Connect(updatePlayersList)
+Players.PlayerRemoving:Connect(updatePlayersList)
+updatePlayersList()
+
+local function createESP(player)
+    if espCache[player] then return end
+
+    local bill = Instance.new("BillboardGui")
+    bill.Name = player.Name
+    bill.AlwaysOnTop = true
+    bill.Size = UDim2.new(0, 200, 0, 50)
+    bill.StudsOffset = Vector3.new(0, 3, 0)
+    bill.Parent = ESPHolder
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.TextScaled = false
+    textLabel.TextSize = 14
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextStrokeTransparency = 0
+    textLabel.Parent = bill
+
+    espCache[player] = {Billboard = bill, Text = textLabel}
+end
+
+local function removeESP(player)
+    if espCache[player] then
+        espCache[player].Billboard:Destroy()
+        espCache[player] = nil
+    end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then createESP(p) end
+end
+Players.PlayerAdded:Connect(createESP)
+Players.PlayerRemoving:Connect(removeESP)
+
+RunService.RenderStepped:Connect(function()
+    updatePlayersList()
+    
+    if #playersList > 0 then
+        local currentTarget = playersList[currentIndex]
+        if currentTarget then
+            TargetLabel.Text = "Objetivo: " .. currentTarget.Name
+        else
+            TargetLabel.Text = "Objetivo: Ninguno"
+        end
+    else
+        TargetLabel.Text = "Objetivo: Ninguno"
+    end
+
+    for player, data in pairs(espCache) do
+        local character = player.Character
+        local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+        local localChar = LocalPlayer.Character
+        local localHRP = localChar and localChar:FindFirstChild("HumanoidRootPart")
+
+        if character and humanoidRootPart and localHRP then
+            data.Billboard.Adornee = humanoidRootPart
+            local distance = math.floor((localHRP.Position - humanoidRootPart.Position).Magnitude)
+            
+            local isFriend = false
+            pcall(function()
+                isFriend = LocalPlayer:IsFriendsWith(player.UserId)
+            end)
+
+            if isFriend then
+                data.Text.TextColor3 = Color3.fromRGB(0, 255, 0) -- Verde para amigos
+            else
+                data.Text.TextColor3 = Color3.fromRGB(255, 0, 0) -- Rojo para enemigos
+            end
+
+            data.Text.Text = player.Name .. "\n[" .. distance .. " studs]"
+            data.Billboard.Enabled = true
+        else
+            data.Billboard.Enabled = false
+        end
+    end
+end)
+
+PrevBtn.MouseButton1Click:Connect(function()
+    if #playersList > 0 then
+        currentIndex = currentIndex - 1
+        if currentIndex < 1 then currentIndex = #playersList end
+    end
+end)
+
+NextBtn.MouseButton1Click:Connect(function()
+    if #playersList > 0 then
+        currentIndex = currentIndex + 1
+        if currentIndex > #playersList then currentIndex = 1 end
+    end
+end)
+
+TpBtn.MouseButton1Click:Connect(function()
+    if #playersList > 0 then
+        local target = playersList[currentIndex]
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            local localChar = LocalPlayer.Character
+            if localChar and localChar:FindFirstChild("HumanoidRootPart") then
+                localChar.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
+            end
+        end
+    end
+end)
+
+local minimized = false
+MinBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    ContentFrame.Visible = not minimized
+    if minimized then
+        MainFrame.Size = UDim2.new(0, 260, 0, 35)
+        MinBtn.Text = "+"
+    else
+        MainFrame.Size = UDim2.new(0, 260, 0, 320)
+        MinBtn.Text = "-"
+    end
+end)
+
+CloseBtn.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
