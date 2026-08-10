@@ -17,11 +17,8 @@
 -- [+] Ajuste de dirección de vuelo para evitar inversiones en el sentido del stick.
 -- [+] Implementación de anclaje de posición estricto (Modo Ladrillo) al dejar de mover el joystick, anulando cualquier fuerza física externa o movimiento fantasma en los juegos.
 -- [+] Rediseño del modo minimizado para mostrar única y exclusivamente los 3 botones principales (Volar, Boost y Noclip) en formato compacto.
--- [Version: 4]
--- [+] Corrección definitiva de la inversión del stick/teclado: Inversión del eje Z del moveVector (`-moveVector.Z`) para alinear perfectamente los comandos de adelante y atrás.
--- [+] Estructura blindada y código 100% completo sin cortes de ningún tipo, respetando cada línea original pedida.
 
-local Version = 4
+local Version = 3
 
 -- [ DEPENDENCIAS Y SERVICIOS ] --
 local Players = game:GetService("Players")
@@ -360,7 +357,7 @@ UpdateBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- [ LÓGICA DE VUELO UNIVERSAL CON BLOQUEO DE POSICIÓN ESTRICTO Y CORRECCIÓN DE DIRECCIÓN ] --
+-- [ LÓGICA DE VUELO UNIVERSAL CON BLOQUEO DE POSICIÓN ESTRICTO ] --
 local BodyVelocity, BodyGyro
 local lockedPosition = nil
 
@@ -419,7 +416,7 @@ BoostBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Bucle Asíncrono de Vuelo con Anclaje Cinemático y Eje Z Corregido
+-- Bucle Asíncrono de Vuelo con Anclaje Cinemático (Modo Ladrillo si no se mueve el stick)
 task.spawn(function()
     RunService.RenderStepped:Connect(function()
         if States.Flying and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and BodyVelocity and BodyGyro then
@@ -435,8 +432,7 @@ task.spawn(function()
             
             if moveVector.Magnitude > 0 then
                 lockedPosition = nil -- Desbloquear al usar el stick
-                -- FIX: Invertido el eje Z (`-moveVector.Z`) para arreglar la inversión de movimiento
-                local velocityDir = (camCFrame.RightVector * moveVector.X) + (camCFrame.LookVector * -moveVector.Z)
+                local velocityDir = (camCFrame.RightVector * moveVector.X) + (camCFrame.LookVector * moveVector.Z)
                 BodyVelocity.Velocity = velocityDir * speed
                 HRP.AssemblyLinearVelocity = Vector3.zero
             else
@@ -555,6 +551,37 @@ task.spawn(function()
                 TimeLabel.Text = string.format("Sesión: %dd %02dh %02dm %02ds", days, hours, mins, secs)
             else
                 TimeLabel.Text = string.format("Sesión: %02dh %02dm %02ds", hours, mins, secs)
+            end
+        end
+    end)
+end)
+
+-- [ AUTO-RECONEXIÓN Y PERMANENCIA ] --
+task.spawn(function()
+    GuiService.ErrorMessageChanged:Connect(function(msg)
+        if getgenv().MendezFlyTool_Loaded then
+            local queue_teleport = syn and syn.queue_on_teleport or queue_on_teleport or fluxus and fluxus.queue_on_teleport
+            if queue_teleport then
+                queue_teleport([[
+                    repeat task.wait() until game:IsLoaded()
+                    task.wait(2)
+                    local success, result = pcall(function()
+                        return game:HttpGet("https://raw.githubusercontent.com/elmendezz/anti-afk-pro-script/refs/heads/main/flytool")
+                    end)
+                    if success and result then
+                        loadstring(result)()
+                    end
+                ]])
+            end
+
+            if msg and (string.find(msg:lower(), "disconnect") or string.find(msg:lower(), "kicked")) then
+                StarterGui:SetCore("SendNotification", {
+                    Title = "Reconectando...",
+                    Text = "Desconexión detectada. Reingresando al servidor...",
+                    Duration = 3,
+                })
+                task.wait(3)
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
             end
         end
     end)
