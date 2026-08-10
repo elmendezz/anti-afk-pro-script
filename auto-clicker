@@ -1,4 +1,4 @@
--- Version: 8.0.0
+-- Version: 9.0.0
 -- Dependencies: Roblox Client / Delta Executor (Mobile)
 -- Changelog:
 -- - Initial version: Setup of base Anti-AFK UI framework.
@@ -14,6 +14,7 @@
 -- - Version 6.0.0: Removed native VirtualInputManager Mouse events to prevent Roblox switching input modes to PC/Keyboard. Implemented Camera 3D Raycasting, native ClickDetector firing, and TouchTap injection to keep mobile touch controls completely active.
 -- - Version 7.0.0: Replaced while loops with RunService (Heartbeat and RenderStepped) for maximum frame-sync performance. Removed forced TouchTap injection to prevent interference with real user input. Added task.defer for non-blocking game touches. Added InputTransparent logic for UI elements.
 -- - Version 8.0.0: Implemented "Mezcla Pro" input fallback (VirtualInputManager + Raycast + Tool:Activate) to restore UI tapping without blocking touch. Added IgnoreGuiInset and ResetOnSpawn to ScreenGui for total stability. Perfected InputTransparent toggling for ClickPoints.
+-- - Version 9.0.0: Fixed script-breaking error by wrapping InputTransparent in pcall during point creation. Added native Active = false/true logic to correctly allow touch input to pass through the UI when running.
 
 repeat wait() until game:IsLoaded() and game.Players and game.Players.LocalPlayer and game.Players.LocalPlayer.Character
 
@@ -237,8 +238,12 @@ local function createPoint(position)
     PointFrame.Size = UDim2.new(0, 34, 0, 34)
     PointFrame.Position = position or UDim2.new(0.5, -17, 0.4, -17)
     PointFrame.BackgroundColor3 = Color3.fromRGB(0, 255, 127)
+    
+    -- El secreto para que no se crashee: Active bloquea el input para poder arrastrarlo ahora mismo.
+    -- pcall previene que el InputTransparent inventado crashee la función si no está soportado.
     PointFrame.Active = true
-    PointFrame.InputTransparent = false -- Se bloquea para poder moverlo al inicio
+    pcall(function() PointFrame.InputTransparent = false end)
+    
     PointFrame.ZIndex = 100
 
     UICornerPoint.CornerRadius = UDim.new(1, 0)
@@ -373,8 +378,10 @@ ReadyButton.MouseButton1Click:Connect(function()
         for _, p in pairs(clickPoints) do
             p.BackgroundTransparency = 0.5
             p.TextLabel.TextTransparency = 0.5
-            p.Active = true
-            pcall(function() p.InputTransparent = true end) -- Ahora sí, deja pasar los clicks por completo
+            
+            -- Active = false es la forma real en Roblox de dejar pasar el Touch
+            p.Active = false
+            pcall(function() p.InputTransparent = true end)
         end
     else
         getgenv().ClickingActive = false
@@ -390,8 +397,10 @@ ReadyButton.MouseButton1Click:Connect(function()
         for _, p in pairs(clickPoints) do
             p.BackgroundTransparency = 0
             p.TextLabel.TextTransparency = 0
+            
+            -- Volvemos a bloquear el input para poder arrastrarlo
             p.Active = true
-            pcall(function() p.InputTransparent = false end) -- Vuelve a ser interactuable para moverlo
+            pcall(function() p.InputTransparent = false end)
         end
     end
 end)
