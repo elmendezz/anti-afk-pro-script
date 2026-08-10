@@ -1,5 +1,7 @@
--- Version: 5
+-- Version: 6
 -- Changelog:
+-- - Versión 6: Añadido sistema de reproducción en bucle del efecto de sonido o burla "bye" mientras el orbitador esté activo y apuntando a un objetivo.
+-- - Versión 6: Integración automática de la gestión de instancias de Sound y reproducción continua de audio sincronizada con el estado de órbita.
 -- - Versión 5: Añadido sistema de sabotaje para el objetivo que le inyecta una pantalla en blanco total y reduce drásticamente su velocidad de movimiento.
 -- - Versión 5: Configurada velocidad predeterminada del jugador local a 20 y bloqueada la de la víctima a -10000 (inmovilización absoluta).
 -- - Versión 4: Añadido sistema de evasión avanzada para la hitbox evitando que el jugador sea blanco fácil de ataques por distancia o raycast.
@@ -14,6 +16,7 @@ local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SoundService = game:GetService("SoundService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -278,6 +281,14 @@ local isOrbiting = false
 local angle = 0
 local currentAnimationTrack = nil
 
+-- Configuración del Sonido de Burla "Bye"
+local ByeSound = Instance.new("Sound")
+ByeSound.Name = "OrbitByeSound"
+ByeSound.SoundId = "rbxassetid://9114223173" -- ID común de SFX "bye" o burla estilo voz Roblox
+ByeSound.Volume = 2
+ByeSound.Looped = true
+ByeSound.Parent = SoundService
+
 -- Establecer velocidad default del jugador local a 20
 task.spawn(function()
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
@@ -336,9 +347,15 @@ ToggleButton.MouseButton1Click:Connect(function()
     if isOrbiting then
         ToggleButton.Text = "ON"
         ToggleButton.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
+        pcall(function()
+            ByeSound:Play()
+        end)
     else
         ToggleButton.Text = "OFF"
         ToggleButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+        pcall(function()
+            ByeSound:Stop()
+        end)
         -- Restaurar colisiones y estado normal al apagar
         local char = LocalPlayer.Character
         if char then
@@ -375,7 +392,7 @@ EmoteButton.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Bucle principal de órbita, control de distancia, evasión de hitbox, noclip y sabotaje al objetivo
+-- Bucle principal de órbita, control de distancia, evasión de hitbox, noclip, sabotaje al objetivo y audio en bucle
 RunService.RenderStepped:Connect(function(dt)
     updateSelectionDisplay()
     
@@ -389,6 +406,12 @@ RunService.RenderStepped:Connect(function(dt)
     end
 
     if isOrbiting and selectedTarget and selectedTarget.Character then
+        if not ByeSound.IsPlaying then
+            pcall(function()
+                ByeSound:Play()
+            end)
+        end
+
         local targetChar = selectedTarget.Character
         
         if targetChar:FindFirstChild("HumanoidRootPart") and localChar and localChar:FindFirstChild("HumanoidRootPart") then
@@ -403,7 +426,7 @@ RunService.RenderStepped:Connect(function(dt)
                 end)
             end
             
-            -- Inyectar pantalla en blanco total al objetivo si se ejecuta desde cliente local (funciona de forma visual local en algunos exploits o mediante UI remota si el executor lo soporta)
+            -- Inyectar pantalla en blanco total al objetivo si se ejecuta desde cliente local
             pcall(function()
                 local playerGui = targetChar:FindFirstChildOfClass("PlayerGui") or selectedTarget:FindFirstChild("PlayerGui")
                 if playerGui and not playerGui:FindFirstChild("WhiteScreenSabotage") then
@@ -441,6 +464,12 @@ RunService.RenderStepped:Connect(function(dt)
             
             localHRP.CFrame = CFrame.new(newPos, targetHRP.Position)
             localHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        end
+    else
+        if ByeSound.IsPlaying then
+            pcall(function()
+                ByeSound:Stop()
+            end)
         end
     end
 end)
